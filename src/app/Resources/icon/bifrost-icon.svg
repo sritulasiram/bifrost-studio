@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><title>Bifrost Studio app icon</title><rect x="100" y="100" width="824" height="824" rx="185" fill="#0E1020"/>
+<defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="300" x2="0" y2="760"><stop offset="0" stop-color="#8B7BFF"/><stop offset=".4" stop-color="#4FE0C8"/><stop offset=".72" stop-color="#FFC24B"/><stop offset="1" stop-color="#FF6B6B"/></linearGradient></defs>
+<g transform="translate(512 512) scale(1.12) translate(-512 -515)">
+<path d="M322 760V560A380 380 0 0 1 512 231A380 380 0 0 1 702 560V760" fill="none" stroke="#E8B64C" stroke-width="48" stroke-linejoin="miter" stroke-miterlimit="20"/>
+<path d="M366 760V560A292 292 0 0 1 494 318.4V760Z" fill="url(#g)"/>
+<path d="M530 318.4A292 292 0 0 1 658 560V760H530Z" fill="url(#g)"/>
+<rect x="262" y="784" width="500" height="44" rx="22" fill="#E8B64C"/></g></svg>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- One-colour variant (template/monochrome contexts): same gate, no plate. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <g transform="translate(512 512) scale(1.12) translate(-512 -515)" fill="#000000">
+    <path d="M322 760V560A380 380 0 0 1 512 231A380 380 0 0 1 702 560V760" fill="none" stroke="#000000" stroke-width="48" stroke-linejoin="miter" stroke-miterlimit="20"/>
+    <path d="M366 760V560A292 292 0 0 1 494 318.4V760Z"/>
+    <path d="M530 318.4A292 292 0 0 1 658 560V760H530Z"/>
+    <rect x="262" y="784" width="500" height="44" rx="22"/>
+  </g>
+</svg>

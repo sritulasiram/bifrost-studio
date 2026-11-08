@@ -1,0 +1,32 @@
+Bifrost Studio — read me first
+==============================
+
+Bifrost Studio flashes Samsung firmware over USB (Download Mode).
+Flashing can make a phone unbootable or erase its data. Use it only on a
+phone you are prepared to recover, with firmware for that exact model.
+
+1. Install
+   Drag "Bifrost Studio" onto "Applications".
+
+2. First launch (this build is not notarized)
+   This build is signed ad hoc, not with an Apple Developer ID, so macOS
+   blocks it the first time:
+     - Open Bifrost Studio once; macOS says it can't be opened.
+     - Open System Settings › Privacy & Security, scroll down, and click
+       "Open Anyway" next to Bifrost Studio. Confirm.
+
+3. Background service (needed to talk to phones)
+   Bifrost Studio runs flashes in a background service so a flash keeps
+   going if the window closes. A small helper runs as root and only claims
+   the Samsung USB interface; it never opens your files.
+     - In Bifrost Studio, open Settings (⌘,) and click Register.
+     - Approve "Bifrost Studio" in System Settings › General › Login Items.
+
+4. Uninstall
+     - In Bifrost Studio › Settings (⌘,), click Unregister.
+     - Move Bifrost Studio from Applications to the Trash.
+     - Optional: delete ~/Library/Application Support/Bifrost Studio
+       (flash history).
+
+Bifrost Studio is not affiliated with Samsung. Licences of included
+components are in the app: Contents/Resources/THIRD-PARTY-NOTICES.txt.

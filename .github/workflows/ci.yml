@@ -1,0 +1,110 @@
+# Status: written 2026-11-08 and NOT yet run on GitHub. The libusb build step
+# and the Homebrew-LLVM libFuzzer job could not be exercised locally.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  LIBUSB_VERSION: "1.0.29"
+  # SHA-256 of the GitHub release tarball as downloaded on 2026-11-08
+  # (trust on first use; not compared with an upstream-published checksum).
+  LIBUSB_SHA256: "5977fc950f8d1395ccea9bd48c06b3f808fd3c2c961b44b0c2e6e29fc3a70a85"
+
+jobs:
+  build-test:
+    name: Universal build and tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache libusb
+        id: libusb-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: libusb-${{ env.LIBUSB_VERSION }}-universal-${{ env.LIBUSB_SHA256 }}
+
+      - name: Build universal static libusb
+        if: steps.libusb-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o libusb.tar.bz2 \
+            "https://github.com/libusb/libusb/releases/download/v${LIBUSB_VERSION}/libusb-${LIBUSB_VERSION}.tar.bz2"
+          echo "${LIBUSB_SHA256}  libusb.tar.bz2" | shasum -a 256 -c -
+          tar xjf libusb.tar.bz2
+          cd "libusb-${LIBUSB_VERSION}"
+          ./configure --disable-shared --enable-static --prefix="$HOME/.local" \
+            CFLAGS="-arch arm64 -arch x86_64 -mmacosx-version-min=13.0 -O2"
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+          lipo -archs "$HOME/.local/lib/libusb-1.0.a"
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLIBUSB_ROOT="$HOME/.local"
+
+      - name: Build
+        run: cmake --build build -j"$(sysctl -n hw.ncpu)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Check universal binaries
+        run: |
+          lipo -archs "build/Bifrost Studio.app/Contents/MacOS/BifrostStudio" | grep -q x86_64
+          lipo -archs "build/Bifrost Studio.app/Contents/MacOS/BifrostStudio" | grep -q arm64
+          lipo -archs build/src/core/libbifrost.dylib | grep -q x86_64
+
+  fuzz:
+    name: Fuzz (libFuzzer, ASan+UBSan)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM and lld (LLVM provides the libFuzzer runtime Apple clang lacks)
+        # lld links the sanitizer-instrumented objects: Apple's linker rejected them
+        # ("invalid r_symbolnum=1") when they were built with Homebrew's clang.
+        run: brew install llvm lld
+
+      - name: Configure
+        run: |
+          LLVM="$(brew --prefix llvm)"
+          LLD="$(brew --prefix lld)/bin/ld64.lld"
+          test -x "$LLD"
+          cmake -S . -B build-fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_COMPILER="$LLVM/bin/clang" -DCMAKE_CXX_COMPILER="$LLVM/bin/clang++" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=$LLD" \
+            -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
+            -DBIFROST_FUZZ=ON -DBIFROST_ENABLE_USB=OFF -DBIFROST_BUILD_APP=OFF
+          grep -q 'BIFROST_HAVE_LIBFUZZER:INTERNAL=1' build-fuzz/CMakeCache.txt
+
+      - name: Build
+        run: cmake --build build-fuzz -j"$(sysctl -n hw.ncpu)"
+
+      - name: Unit tests and seed replay under sanitizers
+        run: ctest --test-dir build-fuzz --output-on-failure
+
+      - name: Fuzz each target for 2 minutes
+        working-directory: build-fuzz/tests/fuzz
+        run: |
+          set -euo pipefail
+          for target in pit package lz4 naming; do
+            mkdir -p "ci-work/$target"
+            "./fuzz_$target" -max_total_time=120 -max_len=65536 -print_final_stats=1 \
+              "ci-work/$target" "$GITHUB_WORKSPACE/tests/fuzz/corpus/$target"
+          done
+
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: |
+            build-fuzz/tests/fuzz/crash-*
+            build-fuzz/tests/fuzz/leak-*
+            build-fuzz/tests/fuzz/timeout-*
+          if-no-files-found: ignore

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Registered by the app with SMAppService.daemon(plistName:); runs as root
+     and only performs USB claim and transfer for the agent. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>@BIFROST_USBD_LABEL@</string>
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/bifrost-usbd</string>
+    <key>MachServices</key>
+    <dict>
+        <key>@BIFROST_USBD_LABEL@</key>
+        <true/>
+    </dict>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>@BIFROST_BUNDLE_ID@</string>
+    </array>
+</dict>
+</plist>

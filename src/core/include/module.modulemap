@@ -1,0 +1,5 @@
+module Bifrost {
+    header "bifrost/bifrost.h"
+    link "bifrost"
+    export *
+}
