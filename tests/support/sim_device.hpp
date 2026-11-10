@@ -1,7 +1,7 @@
 // A stateful simulation of a Samsung Download Mode bootloader, for tests.
 //
 // It implements the Odin protocol as Bifrost Studio understands it from the
-// reference sources (docs/design/protocol.md). It is NOT evidence of how real
+// reference sources (docs/protocol.md). It is NOT evidence of how real
 // bootloaders behave; it checks that the host side is internally consistent,
 // that every byte of every image reaches the right partition, and that the
 // host reacts safely to injected faults.

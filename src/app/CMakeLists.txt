@@ -10,6 +10,19 @@ set(BIFROST_CORE_INCLUDE "${PROJECT_SOURCE_DIR}/src/core/include")
 set(BIFROST_NOTICES "${PROJECT_SOURCE_DIR}/THIRD-PARTY-NOTICES.txt")
 set(BIFROST_ICON_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/Resources/create_app_icon.swift")
 
+# Android platform-tools (adb) ship inside the app so "Reboot to Download Mode"
+# works without a separate install. Downloaded once at configure time, pinned.
+set(BIFROST_PT_VERSION "37.0.1")
+set(BIFROST_PT_SHA256 "ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d")
+set(BIFROST_PT_ZIP "${CMAKE_BINARY_DIR}/platform-tools_r${BIFROST_PT_VERSION}-darwin.zip")
+set(BIFROST_PT_DIR "${CMAKE_BINARY_DIR}/platform-tools")
+if(NOT EXISTS "${BIFROST_PT_DIR}/adb")
+    file(DOWNLOAD
+        "https://dl.google.com/android/repository/platform-tools_r${BIFROST_PT_VERSION}-darwin.zip"
+        "${BIFROST_PT_ZIP}" EXPECTED_HASH SHA256=${BIFROST_PT_SHA256} SHOW_PROGRESS)
+    file(ARCHIVE_EXTRACT INPUT "${BIFROST_PT_ZIP}" DESTINATION "${CMAKE_BINARY_DIR}")
+endif()
+
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
     "${CMAKE_BINARY_DIR}/BifrostStudio-Info.plist"
@@ -54,6 +67,8 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
             "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/AppIcon.icns"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${BIFROST_NOTICES}"
             "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/THIRD-PARTY-NOTICES.txt"
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory "${BIFROST_PT_DIR}"
+            "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/platform-tools"
         VERBATIM
     )
     set_target_properties(BifrostStudio PROPERTIES
@@ -127,6 +142,9 @@ add_custom_command(
     COMMAND "${CMAKE_COMMAND}" -E copy
         "${CMAKE_BINARY_DIR}/${BIFROST_USBD_LABEL}.plist" "${BIFROST_APP_USBD_PLIST}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${BIFROST_NOTICES}" "${BIFROST_APP_NOTICES}"
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${BIFROST_APP_BUNDLE}/Contents/Resources/platform-tools"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${BIFROST_PT_DIR}"
+        "${BIFROST_APP_BUNDLE}/Contents/Resources/platform-tools"
     # Ad-hoc signatures with explicit identifiers: the agent and the USB
     # helper check their peers against these identifiers.
     COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - "${BIFROST_APP_LIB}"

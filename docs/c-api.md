@@ -99,7 +99,7 @@ sequenceDiagram
 | 7 | `BF_E_INSUFFICIENT_SPACE` | insufficient-space | Not enough disk space |
 | 8 | `BF_E_FILE_CHANGED` | file-changed | Package changed after verification |
 | 9 | `BF_E_PIT_INVALID` | pit-invalid | PIT missing, ambiguous or malformed |
-| 10 | `BF_E_PLAN_REFUSED` | plan-refused | Planner refused (rules: [../design/protocol.md](../design/protocol.md#planner-rules)) |
+| 10 | `BF_E_PLAN_REFUSED` | plan-refused | Planner refused (rules: [protocol.md](protocol.md#planner-rules)) |
 | 11 | `BF_E_MODEL_MISMATCH` | model-mismatch | Typed model does not match |
 | 12 | `BF_E_USB_DISCONNECTED` | usb-disconnected | Device went away |
 | 13 | `BF_E_USB_TIMEOUT` | usb-timeout | Transfer timed out |
@@ -145,12 +145,7 @@ Descriptions marked by meaning rather than quoted text are inferred from the cod
 
 `bf_progress` fields: `phase`, `slot`, `entry`, `file_done`, `file_total`, `total_done`, `total`.
 
-```mermaid
-flowchart LR
-    V[0 VERIFYING] --> I[1 CHECKING_IMAGES] --> C[2 CONNECTING] --> R[3 READING_PIT] --> P[4 PLANNING] --> T[5 TRANSFERRING]
-    T --> M[6 COMMITTING] --> T
-    M --> L[7 CLOSING] --> D[8 DONE]
-```
+Phases in order: `0 VERIFYING`, `1 CHECKING_IMAGES`, `2 CONNECTING`, `3 READING_PIT`, `4 PLANNING`, `5 TRANSFERRING`, `6 COMMITTING` (repeats after each sequence), `7 CLOSING`, `8 DONE`.
 
 `COMMITTING` means the phone is writing a sequence and may take a while; it repeats after each sequence.
 

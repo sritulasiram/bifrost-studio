@@ -4,8 +4,11 @@
 
 #include <libusb.h>
 
+#include <chrono>
 #include <limits>
+#include <cstdio>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace bifrost::transport {
@@ -102,6 +105,8 @@ public:
         libusb_close(handle_);
     }
 
+    void setControlLines(std::string note) { controlLines_ = std::move(note); }
+
     const OdinInterface& selection() const noexcept override
     {
         return selection_;
@@ -124,7 +129,13 @@ public:
             handle_, selection_.endpointOut, const_cast<unsigned char*>(data),
             static_cast<int>(size), &transferred, timeoutMs);
         if (result != LIBUSB_SUCCESS) {
-            return libusbError("USB bulk write failed", result);
+            char detail[192];
+            std::snprintf(detail, sizeof detail,
+                          "USB bulk write failed (interface %u, OUT 0x%02x, IN 0x%02x, "
+                          "setup: %s)",
+                          selection_.interfaceNumber, selection_.endpointOut,
+                          selection_.endpointIn, controlLines_.c_str());
+            return libusbError(detail, result);
         }
         return static_cast<std::size_t>(transferred);
     }
@@ -147,7 +158,12 @@ public:
                                  static_cast<int>(size), &transferred,
                                  timeoutMs);
         if (result != LIBUSB_SUCCESS) {
-            return libusbError("USB bulk read failed", result);
+            char detail[192];
+            std::snprintf(detail, sizeof detail,
+                          "USB bulk read failed (interface %u, IN 0x%02x, setup: %s)",
+                          selection_.interfaceNumber, selection_.endpointIn,
+                          controlLines_.c_str());
+            return libusbError(detail, result);
         }
         return static_cast<std::size_t>(transferred);
     }
@@ -219,6 +235,7 @@ private:
     libusb_device_handle* handle_{};
     OdinInterface selection_;
     bool claimed_{true};
+    std::string controlLines_{"not set"};
     bool kernelDriverDetached_{};
 };
 
@@ -450,8 +467,37 @@ Expected<std::unique_ptr<ClaimedInterface>> LibusbTransport::claim(
             return libusbError("Could not select the Odin alternate setting",
                                result);
         }
-        return std::unique_ptr<ClaimedInterface>(
+        // Odin on Windows opens the COM port, which clears stalled pipes,
+        // sets the line coding and raises DTR and RTS. Some newer bootloaders
+        // ignore bulk traffic until then. All best effort: a phone that does
+        // not care just stalls the request, and the results go in the error.
+        std::string setup;
+        {
+            const std::uint16_t controlInterface =
+                selection->interfaceNumber > 0 ? selection->interfaceNumber - 1 : 0;
+            const int haltOut = libusb_clear_halt(handle, selection->endpointOut);
+            const int haltIn = libusb_clear_halt(handle, selection->endpointIn);
+            // SET_LINE_CODING: 115200 baud, 1 stop bit, no parity, 8 data bits.
+            unsigned char coding[7] = {0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x08};
+            const int line = libusb_control_transfer(handle, 0x21, 0x20, 0, controlInterface,
+                                                     coding, sizeof coding, 500);
+            const int dtr = libusb_control_transfer(handle, 0x21, 0x22, 0x0003,
+                                                    controlInterface, nullptr, 0, 500);
+            char note[128];
+            std::snprintf(note, sizeof note, "halt %s/%s, coding %s, dtr %s",
+                          haltOut == 0 ? "ok" : libusb_error_name(haltOut),
+                          haltIn == 0 ? "ok" : libusb_error_name(haltIn),
+                          line >= 0 ? "ok" : libusb_error_name(line),
+                          dtr >= 0 ? "ok" : libusb_error_name(dtr));
+            setup = note;
+            // Give the bootloader's Odin code time to notice the port open
+            // before the first handshake is sent.
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        }
+        auto claimed = std::unique_ptr<LibusbClaimedInterface>(
             new LibusbClaimedInterface(*context, handle, *selection, detached));
+        claimed->setControlLines(setup);
+        return std::unique_ptr<ClaimedInterface>(std::move(claimed));
     }
     return makeError(ErrorCode::usbDisconnected,
                      "The selected Samsung device is no longer connected");

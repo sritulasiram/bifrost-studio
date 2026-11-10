@@ -6,29 +6,23 @@
 
 <p align="center"><strong>Samsung firmware flasher for Mac: a native Odin alternative for macOS.</strong></p>
 
-Bifrost Studio is a native macOS app for flashing Samsung Galaxy firmware over USB in Download Mode. It takes the same `.tar.md5` packages (BL, AP, CP, CSC) as Odin, so you can flash stock firmware from a Mac with no Windows, no Wine, no Java and no Heimdall build. Built with SwiftUI.
+Bifrost Studio flashes Samsung Galaxy firmware over USB in Download Mode, the way Odin does, but natively on macOS. It takes the same `.tar.md5` packages (BL, AP, CP, CSC), so you need no Windows, Wine, Java or Heimdall build.
 
 > **Warning.** Flashing can leave a phone unbootable or erase its data. Use it only on a phone you are prepared to recover, with firmware for that exact model. Not affiliated with Samsung.
 
-> **Beta.** Bifrost Studio is currently in its beta phase and has so far been tested on one Samsung phone. It will be tested on more Samsung devices over time. You are welcome to try it and tell me how it goes. If you run into any problem, please [open an issue](https://github.com/sritulasiram/bifrost-studio/issues) and include the phone model, the firmware build and the log from History (History > Export > Copy for Bug Report).
-
-**Project status: beta.** One phone has been tested (see [Supported devices](#supported-devices)), and the DMG is not yet notarized.
+> **Beta.** Tested on three Samsung phones so far (SM-N915G, SM-N920I, SM-N950F), with the SM-N986U1 in testing, and the DMG is not yet notarized (see [Supported devices](#supported-devices)). If something goes wrong, [open an issue](https://github.com/sritulasiram/bifrost-studio/issues) with the phone model, the firmware build and the log from History > Export > Copy for Bug Report.
 
 ![Bifrost Studio, Flash setup screen](docs/images/flash-flow.png)
 
-## Why it's different: fail safe
-
-Every step that could write the wrong thing is checked **before any data leaves the Mac**, and anything ambiguous is refused. The planner will not flash a package that doesn't match the phone, and it contains no way to re-partition, erase NAND or wipe user data on its own.
-
 ## Features
 
-- **Plan before you flash.** Review exactly which image goes to which partition, offline, without opening a session on the phone. The plan comes from the PIT embedded in the firmware or from a PIT file.
-- **Verified inputs.** MD5 check of every `.tar.md5`, TAR parsing with large-file support, and every LZ4 image decoded once before the phone is touched. A file that changes after verification is refused.
-- **Refusal-first planner.** Wrong model, wrong slot, duplicate or shared partition targets, a PIT that differs from the phone's, and modem-type partitions are all refused.
-- **Explicit confirmation.** The model is read from the firmware, and any data erase (full CSC, USERDATA) needs a separate acknowledgement.
-- **Background flashing.** A flash keeps running if you close the window, and the app reattaches when you reopen it.
-- **Honest failures.** Every error says whether the phone received no data, some data or all of it, and the app shows matching recovery advice.
-- **Extras.** Probe, PIT backup, a firmware inspector, a job history you can search and export, and a command-line tool.
+- **Fail safe.** Everything is checked before any data leaves the Mac, and anything ambiguous is refused. There is no way to re-partition, erase NAND or wipe user data.
+- **Plan before you flash.** See which image goes to which partition, offline, from the firmware's PIT.
+- **Verified inputs.** MD5 check of every `.tar.md5`, and every LZ4 image decoded once before the phone is touched.
+- **Explicit confirmation.** The model is read from the firmware, and any data erase needs a separate acknowledgement.
+- **Background flashing.** A flash keeps running if you close the window.
+- **Honest failures.** Every error says whether the phone received no data, some or all of it.
+- **Extras.** Probe, PIT backup, firmware inspector, searchable job history and a command-line tool. Unreleased and untested on hardware: reboot a phone to Download Mode with a bundled `adb`, and prepare a TWRP flash.
 
 ## How it works
 
@@ -38,17 +32,20 @@ flowchart LR
     D --> E[(History)]
 ```
 
-A flash must be the **first Odin session after the phone enters Download Mode**; it never resumes. If you probe the phone or back up its PIT first, restart it into Download Mode before flashing. Details: [architecture](docs/design/architecture.md) and [protocol](docs/design/protocol.md).
+A flash must be the **first Odin session after the phone enters Download Mode**; it never resumes. Restart into Download Mode after a probe or PIT backup. Details: [architecture](docs/architecture.md) and [protocol](docs/protocol.md).
 
 ## Supported devices
 
 | | |
 |---|---|
-| Tested on hardware | **Samsung SM-N920I (Galaxy Note 5).** A full flash succeeded on 2026-11-08: BL + AP + CP + full CSC, about 4.9 GB in about 2.5 minutes. |
+| Tested on hardware | **SM-N920I (Galaxy Note 5):** full flash succeeded on 2026-11-08 (BL + AP + CP + full CSC, about 4.9 GB in about 2.5 minutes). |
+| | **SM-N950F (Galaxy Note 8):** full flash succeeded on 2026-11-09 (about 6.6 GB in about 200 seconds). |
+| | **SM-N915G (Galaxy Note Edge):** tested. |
+| In testing | **SM-N986U1 (Galaxy Note 20 Ultra 5G):** not working yet. |
 | Intended | Samsung phones that Odin can flash, detected automatically. **Untested** on any other model. |
 | Mac | macOS 13 or newer. Built and run on an Intel Mac only so far; the build is universal (arm64 + x86_64). |
 
-Not supported, on purpose: modem-type (binary type 1) partitions, re-partitioning, NAND erase, and firmware downloading. Partitions the planner can't map unambiguously are refused. See [hardware results](docs/project/hardware.md) and the [requirements](docs/project/requirements.md) for what is verified and what isn't.
+Not supported, on purpose: modem-type (binary type 1) partitions, re-partitioning, NAND erase, and firmware downloading. Partitions the planner can't map unambiguously are refused. Details: [hardware results](docs/hardware.md).
 
 ## Install
 
@@ -70,11 +67,11 @@ bifrost-cli plan --pit device.pit --ap AP_….tar.md5 --csc CSC_….tar.md5   # 
 bifrost-cli agent flash --bus 1 --address 4 --model SM-N920I --ap … --csc …
 ```
 
-Direct USB commands need `sudo`. The `agent` commands go through the background service and don't. Full list: [CLI reference](docs/reference/cli.md).
+Direct USB commands need `sudo`. The `agent` commands go through the background service and don't. Full list: [CLI reference](docs/cli.md).
 
 ## Build from source
 
-You need macOS 13+, CMake 3.26+, the Xcode command-line tools and a **universal static libusb 1.0.28 or newer** installed under a prefix you pass as `LIBUSB_ROOT` (for example `~/.local/lib/libusb-1.0.a`). LZ4 is downloaded when you configure, so the first run needs network access.
+You need macOS 13+, CMake 3.26+, the Xcode command-line tools and a **universal static libusb 1.0.28 or newer** installed under a prefix you pass as `LIBUSB_ROOT` (for example `~/.local/lib/libusb-1.0.a`). LZ4 and the Android platform-tools are downloaded when you configure, so the first run needs network access.
 
 ```sh
 cmake -S . -B ../bifrost-build -DCMAKE_BUILD_TYPE=Release -DLIBUSB_ROOT=$HOME/.local
@@ -83,51 +80,37 @@ ctest --test-dir ../bifrost-build --output-on-failure
 cmake --build ../bifrost-build --target dmg
 ```
 
-Keep build directories outside the repository. More options, install steps and the fuzz build: [build and install](docs/guides/build-and-install.md).
-
-## Repository layout
-
-```
-src/core      C++17 library + C API (libbifrost.dylib)
-src/service   bifrost-agent (LaunchAgent) and bifrost-usbd (root USB helper)
-src/cli       bifrost-cli
-src/app       SwiftUI app and the .app bundle build
-packaging     launchd plists, DMG script and the DMG read-me
-tests         unit tests, bootloader simulator, fixtures, fuzzing
-docs          documentation; start at docs/README.md
-```
+Keep build directories outside the repository. More options, install steps and the fuzz build: [build and install](docs/build-and-install.md).
 
 ## Documentation
 
-Everything is under [docs/](docs/README.md), grouped by purpose:
+All pages are in [docs/](docs); this table is the index.
 
-| Folder | Contents |
+| I want to… | Read |
 |---|---|
-| [docs/design/](docs/design) | [Architecture](docs/design/architecture.md), [protocol and planner](docs/design/protocol.md), [services and security](docs/design/services.md), [the app](docs/design/app.md) |
-| [docs/reference/](docs/reference) | [C API](docs/reference/c-api.md), [CLI](docs/reference/cli.md), [service wire protocol](docs/reference/service-wire.md) |
-| [docs/guides/](docs/guides) | [Build and install](docs/guides/build-and-install.md), [testing](docs/guides/testing.md) |
-| [docs/project/](docs/project) | [Status and roadmap](docs/project/status.md), [requirements](docs/project/requirements.md), [hardware results](docs/project/hardware.md) |
+| Understand how the pieces fit and how a flash runs | [Architecture](docs/architecture.md) |
+| Know the Odin protocol, planner rules and open questions | [Protocol and planner](docs/protocol.md) |
+| See what the agent and USB helper do, and the security model | [Services](docs/services.md) |
+| See how the SwiftUI app works | [The app](docs/app.md) |
+| Flash a phone, enter Download Mode, fix a failed flash | [Using Bifrost Studio](docs/using.md) |
+| Build, install and register the services | [Build and install](docs/build-and-install.md) |
+| Run tests, the simulator or the fuzzers | [Testing](docs/testing.md) |
+| Look up a `bifrost-cli` command | [CLI reference](docs/cli.md) |
+| Look up a C API function, struct or error code | [C API](docs/c-api.md) |
+| Look up an XPC message between app, agent and helper | [Service wire protocol](docs/service-wire.md) |
+| Check current state, known issues and roadmap | [Status](docs/status.md) |
+| Find a requirement ID such as F-40 or S-4 | [Requirements](docs/requirements.md) |
+| See what has been observed on a real phone | [Hardware results](docs/hardware.md) |
+| See what changed between versions | [Changelog](CHANGELOG.md) |
 
 ## Contributing
 
-Contributions are welcome, especially hardware results from other models. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: the safety rules are strict, and some changes (anything destructive, anything touching modem-type partitions) need the owner's approval of a design before code.
+Contributions are welcome, especially hardware results from other models. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: the safety rules are strict, and some changes (anything destructive, anything touching modem-type partitions) need the maintainer's approval of a design before code.
 
 ## Acknowledgements
 
-Bifrost Studio builds on the work of others. The Odin protocol is undocumented, and these projects made it possible to understand it.
-
-| Project | Used for |
-|---|---|
-| [Heimdall](https://github.com/Benjamin-Dobell/Heimdall) (Benjamin Dobell and contributors) | Reference for the PIT layout, control and file-transfer packet formats, Download Mode product IDs and the resume behaviour. Cited in source comments (`libpit`, `BridgeManager`, `ControlPacket`, `FileTransferPacket`). |
-| [Thor](https://github.com/Samsung-Loki/Thor) (Samsung-Loki) | Reference for the Odin session flow and the names of bootloader status codes. |
-| odin4 (Samsung's open-source Odin release) | Reference for protocol-version decoding and which archive entries are skipped. |
-| [LZ4](https://github.com/lz4/lz4) (Yann Collet) | Decoding LZ4-compressed firmware images. Linked into the app. |
-| [libusb](https://github.com/libusb/libusb) | USB access on macOS. Linked into the app. |
-
-Heimdall, Thor and odin4 were used as behavioural references: we read them to learn what the bootloader expects and tested the result against a real phone. Bifrost Studio is not affiliated with any of them, or with Samsung.
+The Odin protocol is undocumented. [Heimdall](https://github.com/Benjamin-Dobell/Heimdall), [Thor](https://github.com/Samsung-Loki/Thor) and Samsung's open-source odin4 were used as behavioural references only; no code was copied. [LZ4](https://github.com/lz4/lz4) and [libusb](https://github.com/libusb/libusb) are linked into the app. Not affiliated with any of them, or with Samsung.
 
 ## Licence
 
-Bifrost Studio is released under the [MIT License](LICENSE).
-
-Third-party components, which keep their own licences: LZ4 (BSD-2-Clause) and libusb (LGPL-2.1). Their notices are in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) and are bundled in the app. libusb is currently linked statically; it must become a replaceable dynamic library before the DMG is shared (requirement D-3). No code was copied from odin4 (Apache-2.0) or Thor (MPL-2.0).
+[MIT](LICENSE). LZ4 (BSD-2-Clause), libusb (LGPL-2.1) and the bundled Android platform-tools (Apache-2.0) keep their own licences; see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt). libusb is linked statically for now and must become a replaceable dynamic library before the DMG is shared (D-3).

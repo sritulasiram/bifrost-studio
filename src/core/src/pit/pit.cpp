@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace bifrost::pit {
@@ -104,7 +105,6 @@ Expected<Table> parse(const std::uint8_t* bytes, std::size_t size)
     // Data after the declared entries is ignored, as Heimdall does.
     Table table;
     table.entries.reserve(count);
-    std::unordered_set<std::string> names;
     for (std::uint32_t index = 0; index < count; ++index) {
         const auto* e = bytes + kHeaderSize + static_cast<std::size_t>(index) * kEntrySize;
         Entry entry{read32(e),      read32(e + 4),  read32(e + 8),
@@ -120,21 +120,37 @@ Expected<Table> parse(const std::uint8_t* bytes, std::size_t size)
         // unit (SM-N920I: CPEFS and BOTA0 are both 1). The planner refuses to
         // flash a partition whose identifier is shared, since the transfer
         // addresses partitions by identifier alone.
-        // Names identify partitions in compare() and findByName(); a duplicate
-        // would make those lookups ambiguous, so it is refused.
-        if (!names.insert(entry.partitionName).second) {
-            return pitError("duplicate partition name " + entry.partitionName);
-        }
+        // Names may repeat too: Snapdragon layouts list XBL, for example, once
+        // per logical unit (SM-N986U1 firmware PIT). compare() pairs repeated
+        // names by occurrence, and the planner refuses any image whose
+        // flash filename or identifier matches more than one partition.
         table.entries.push_back(std::move(entry));
     }
     return table;
 }
 
+namespace {
+
+// The nth entry (zero-based) carrying `name`, or nullptr. Repeated names are
+// paired by order of appearance.
+const Entry* nthByName(const Table& table, const std::string& name, std::size_t n)
+{
+    for (const auto& e : table.entries) {
+        if (e.partitionName == name && n-- == 0) {
+            return &e;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
 Comparison compare(const Table& device, const Table& firmware)
 {
     Comparison result;
+    std::unordered_map<std::string, std::size_t> seen;
     for (const auto& theirs : firmware.entries) {
-        const auto* ours = device.findByName(theirs.partitionName);
+        const auto* ours = nthByName(device, theirs.partitionName, seen[theirs.partitionName]++);
         if (ours == nullptr) {
             result.layoutDifferences.push_back(
                 "partition " + theirs.partitionName +
@@ -152,8 +168,9 @@ Comparison compare(const Table& device, const Table& firmware)
                                              " has a different size");
         }
     }
+    seen.clear();
     for (const auto& ours : device.entries) {
-        if (firmware.findByName(ours.partitionName) == nullptr) {
+        if (nthByName(firmware, ours.partitionName, seen[ours.partitionName]++) == nullptr) {
             result.layoutDifferences.push_back(
                 "partition " + ours.partitionName +
                 " exists on the device but not in the firmware PIT");

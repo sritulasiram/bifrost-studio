@@ -101,14 +101,28 @@ int main()
         }
     }
 
-    // Duplicate partition names make name lookups ambiguous: refused at parse
-    // (found by fuzz_pit; compare() could otherwise miss an extra partition).
+    // Repeated partition names parse (Snapdragon PITs list XBL once per
+    // logical unit); compare() pairs them by occurrence, and an image whose
+    // flash filename matches both is refused as ambiguous.
     {
-        const auto bytes = test::makePit({{2, "SYSTEM", "system.img"}, {3, "SYSTEM", "x.img"}});
+        const auto bytes = test::makePit({{2, "XBL", "xbl.elf"}, {3, "XBL", "xbl.elf"},
+                                          {6, "RECOVERY", "recovery.img"}});
         auto parsed = pit::parse(bytes.data(), bytes.size());
-        CHECK(!parsed && parsed.error().code == ErrorCode::pitInvalid);
-        if (!parsed) {
-            CHECK_CONTAINS(parsed.error().message, "duplicate partition name");
+        CHECK(parsed);
+        if (parsed) {
+            const auto same = pit::compare(*parsed, *parsed);
+            CHECK(same.layoutDifferences.empty() && same.sizeDifferences.empty());
+            const auto fewer = test::makePit({{2, "XBL", "xbl.elf"}, {6, "RECOVERY", "recovery.img"}});
+            auto other = pit::parse(fewer.data(), fewer.size());
+            CHECK(other);
+            if (other) {
+                CHECK(!pit::compare(*parsed, *other).layoutDifferences.empty());
+                CHECK(!pit::compare(*other, *parsed).layoutDifferences.empty());
+            }
+            const auto ap = load(dir, Slot::ap, "AP_N986U1UESEHYH1_XBL.tar",
+                                 TarBuilder().file("xbl.elf", data));
+            const auto plan = planner::buildPlan(*parsed, {ap});
+            CHECK(!plan.flashable());
         }
     }
 

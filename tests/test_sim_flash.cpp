@@ -201,7 +201,8 @@ int main()
         if (!again) {
             CHECK_CONTAINS(again.error().message, "--resume");
         }
-        CHECK(device.repeatedHandshakes() == 1);
+        // One attempt per in-place handshake retry (session.cpp).
+        CHECK(device.repeatedHandshakes() == 4);
         auto resumed = flash::probe(device, {}, true);
         CHECK(resumed && resumed->protocolVersion == 2);
         auto pit = flash::readDevicePit(device, {}, true);
@@ -322,7 +323,7 @@ int main()
     {
         sim::Faults f;
         f.lateZlpAfterSequence = 0;
-        // Known fail-safe behaviour (docs/project/status.md, "Known issues").
+        // Known fail-safe behaviour (docs/status.md, "Known issues").
         cases.push_back({"late ZLP", f, ErrorCode::protocolViolation, DataState::partial});
     }
     {

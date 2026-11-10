@@ -250,7 +250,7 @@ FlashPlan buildPlan(const pit::Table& devicePit,
                 continue;
             }
             if (match->binaryType == pit::kBinaryCommunicationProcessor) {
-                // docs/design/protocol.md, "Open protocol questions".
+                // docs/protocol.md, "Open protocol questions".
                 plan.refusals.push_back(
                     slotName + ": " + entry.name + " targets modem-type partition " +
                     match->partitionName +

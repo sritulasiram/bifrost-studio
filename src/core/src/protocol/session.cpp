@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <limits>
 #include <string>
+#include <thread>
 
 namespace bifrost::odin {
 namespace {
@@ -19,7 +21,7 @@ constexpr std::uint32_t kBeginSession = 0;
 constexpr std::uint32_t kTotalBytes = 2;
 constexpr std::uint32_t kFilePartSize = 5;
 // Begin-session argument: requested maximum protocol version, as odin4 and
-// Samsung-Loki/Thor send it (docs/design/protocol.md, "Odin protocol as implemented").
+// Samsung-Loki/Thor send it (docs/protocol.md, "Odin protocol as implemented").
 constexpr std::uint32_t kRequestedProtocol = 0x7FFFFFFF;
 
 // PIT requests (Heimdall PitFilePacket.h:35-38).
@@ -189,32 +191,51 @@ Expected<SessionInfo> Session::open(bool resume)
 
 Status Session::handshake()
 {
-    if (auto written = writeAll(kHandshakeRequest.data(), kHandshakeRequest.size(),
-                                timeouts_.handshakeMs);
-        !written) {
-        return written;
-    }
-    std::array<std::uint8_t, 7> reply{};
-    auto received = interface_.bulkRead(reply.data(), reply.size(),
-                                        timeouts_.handshakeMs);
-    if (!received) {
-        Error error = std::move(received).error();
-        if (error.code == ErrorCode::usbTimeout) {
-            error.message +=
-                ". The bootloader answers the handshake once per entry into Download "
-                "Mode: if an earlier session on this phone ended without a reboot "
-                "(probe, read-pit, --no-reboot), retry with --resume; otherwise "
-                "re-enter Download Mode";
+    // The bootloader's USB hardware can accept the bytes before its Odin code
+    // is listening (SM8250 / SM-N986U1: the write succeeds, LOKE never comes
+    // back, 2026-11-09), so a silent timeout is retried in place a few times,
+    // as Heimdall does. Any LOKE that arrives counts, including a late reply
+    // to an earlier attempt. Only timeouts are retried.
+    constexpr int kAttempts = 4;
+    constexpr auto kPause = std::chrono::milliseconds(300);
+    Error last = makeError(ErrorCode::usbTimeout, "The handshake was not attempted");
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+        if (attempt != 0) {
+            std::this_thread::sleep_for(kPause);
         }
-        return error;
+        if (auto written = writeAll(kHandshakeRequest.data(), kHandshakeRequest.size(),
+                                    timeouts_.handshakeMs);
+            !written) {
+            if (written.error().code != ErrorCode::usbTimeout) {
+                return written;
+            }
+            last = written.error();
+            continue;
+        }
+        std::array<std::uint8_t, 7> reply{};
+        auto received = interface_.bulkRead(reply.data(), reply.size(),
+                                            timeouts_.handshakeMs);
+        if (!received) {
+            if (received.error().code != ErrorCode::usbTimeout) {
+                return received.error();
+            }
+            last = std::move(received).error();
+            continue;
+        }
+        if (*received != kHandshakeResponse.size() ||
+            !std::equal(kHandshakeResponse.begin(), kHandshakeResponse.end(),
+                        reply.begin())) {
+            return makeError(ErrorCode::protocolViolation,
+                             "Unexpected handshake reply; expected LOKE");
+        }
+        return success();
     }
-    if (*received != kHandshakeResponse.size() ||
-        !std::equal(kHandshakeResponse.begin(), kHandshakeResponse.end(),
-                    reply.begin())) {
-        return makeError(ErrorCode::protocolViolation,
-                         "Unexpected handshake reply; expected LOKE");
-    }
-    return success();
+    last.message +=
+        ". The bootloader answers the handshake once per entry into Download "
+        "Mode: if an earlier session on this phone ended without a reboot (probe, "
+        "read-pit, --no-reboot), retry with --resume; otherwise re-enter Download "
+        "Mode. The handshake was attempted " + std::to_string(kAttempts) + " times";
+    return last;
 }
 
 Expected<SessionInfo> Session::beginSession()

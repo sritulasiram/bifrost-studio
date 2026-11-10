@@ -4,7 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 private enum ToolTab: String, CaseIterable, Identifiable {
-    case probe = "Probe", backup = "PIT Backup", inspect = "Inspect"
+    case probe = "Probe", backup = "PIT Backup", inspect = "Inspect", android = "Android", twrp = "TWRP"
     var id: String { rawValue }
 }
 
@@ -19,6 +19,8 @@ struct ToolsView: View {
             case .probe: ProbeTool()
             case .backup: BackupTool()
             case .inspect: InspectTool()
+            case .android: AndroidTool()
+            case .twrp: TwrpTool()
             }
         }
         .navigationTitle("Tools")
@@ -84,7 +86,7 @@ private struct ProbeTool: View {
             } header: {
                 Text("Probe")
             } footer: {
-                Text("Opens and closes a session to check that the phone answers. Sends no partition table and no firmware.")
+                Text("Opens and closes a session to check that the phone answers. Sends no partition table and no firmware. It uses up this Download Mode session: restart the phone into Download Mode before flashing, and do not run it just before a flash.")
             }
         }
         .formStyle(.grouped)
@@ -112,7 +114,7 @@ private struct BackupTool: View {
             } header: {
                 Text("PIT backup")
             } footer: {
-                Text("Reads the phone's partition table into a file. Writes nothing to the phone.")
+                Text("Reads the phone's partition table into a file. Writes nothing to the phone. It uses up this Download Mode session: restart the phone into Download Mode before flashing.")
             }
         }
         .formStyle(.grouped)
@@ -269,5 +271,122 @@ private struct InspectTool: View {
             offlinePlan = nil
             pitError = error.message
         }
+    }
+}
+
+// MARK: - Android (bundled platform-tools)
+
+/// Runs the adb that ships inside the app (Contents/Resources/platform-tools).
+private enum Adb {
+    static var url: URL? {
+        Bundle.main.url(forResource: "adb", withExtension: nil, subdirectory: "platform-tools")
+    }
+
+    static func run(_ args: [String]) async -> String {
+        guard let exe = url else { return "adb is not bundled in this build." }
+        return await Task.detached {
+            let process = Process()
+            process.executableURL = exe
+            process.arguments = args
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            do { try process.run() } catch { return "Could not run adb: \(error.localizedDescription)" }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? "(no output)" : text
+        }.value
+    }
+}
+
+private struct AndroidTool: View {
+    @State private var output = ""
+    @State private var busy = false
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("adb") {
+                    Text(Adb.url == nil ? "Not bundled" : "Bundled platform-tools")
+                        .foregroundStyle(.secondary)
+                }
+                Button("List Phones") { run(["devices", "-l"]) }
+                Button("Reboot to Download Mode") { run(["reboot", "download"]) }
+                Button("Reboot to Recovery") { run(["reboot", "recovery"]) }
+                Button("Restart adb Server") { run(["kill-server"], then: ["start-server"]) }
+                if !output.isEmpty {
+                    Text(output).font(.callout.monospaced()).textSelection(.enabled)
+                }
+            } header: {
+                Text("Android platform-tools")
+            } footer: {
+                Text("Reboot to Download Mode needs USB debugging on and this Mac authorised on the phone. Without it, use the key combination instead.")
+            }
+        }
+        .formStyle(.grouped)
+        .disabled(busy)
+    }
+
+    private func run(_ args: [String], then next: [String]? = nil) {
+        busy = true
+        Task {
+            var text = await Adb.run(args)
+            if let next { text += "\n" + (await Adb.run(next)) }
+            output = text
+            busy = false
+        }
+    }
+}
+
+// MARK: - TWRP
+
+/// Prepares a TWRP recovery for the normal Flash flow: it becomes the only
+/// file in the AP slot and the phone is not restarted automatically, so you
+/// can boot straight into recovery.
+private struct TwrpTool: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var chosen: URL?
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("TWRP file") {
+                    Text(chosen?.lastPathComponent ?? "None chosen").foregroundStyle(.secondary)
+                }
+                Button("Choose TWRP File…") { choose() }
+                Button("Prepare Flash") { prepare() }
+                    .disabled(chosen == nil)
+                Link("Find TWRP for your model (twrp.me)", destination: URL(string: "https://twrp.me/Devices/Samsung/")!)
+            } header: {
+                Text("Install TWRP")
+            } footer: {
+                Text("Use the build made for your exact model: the .img.tar for Odin, not the .img. Prepare Flash loads it into the AP slot, turns off the automatic restart and opens Flash.")
+            }
+            Section {
+                Label("Turn on OEM unlocking in Developer options first. If the phone has no such option or it is greyed out, the bootloader cannot be unlocked and TWRP will not install.", systemImage: "lock.open")
+                Label("Unlocking the bootloader erases all data and trips Knox permanently.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Label("After the flash, hold Vol Down + Power to leave Download Mode, then immediately hold Vol Up + Home + Power (or the keys for your model) to boot into TWRP. A normal start can restore the stock recovery.", systemImage: "arrow.triangle.2.circlepath")
+            } header: {
+                Text("Before and after")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose a TWRP .img.tar (or .tar) for this phone"
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK { chosen = panel.url }
+    }
+
+    private func prepare() {
+        guard let chosen else { return }
+        for slot in Slot.allCases { model.paths[slot] = nil }
+        model.setPath(chosen.path, for: .ap)
+        model.rebootWhenDone = false
+        model.section = .flash
     }
 }

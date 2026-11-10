@@ -14,20 +14,20 @@ flowchart LR
 
 ## Build
 
-These instructions are for the owner's machine. `cmake` is not on PATH; use the pip-installed copy. The host is Intel x86_64: build universal, never arm64-only.
+You need macOS 13+, CMake 3.26+ and the Xcode command-line tools. If `cmake` is not on your `PATH` (for example a pip-installed copy), call it by full path. The build must be universal (or x86_64); never arm64-only.
 
 ```sh
-B=/Users/sritulasiram/Library/Python/3.11/lib/python/site-packages/cmake/data/bin
-S=$HOME/Library/Caches/BifrostBuild          # outside the repo
-$B/cmake -S . -B $S -DCMAKE_BUILD_TYPE=Release -DLIBUSB_ROOT=$HOME/.local
-$B/cmake --build $S -j8                       # → "$S/Bifrost Studio.app"
-$B/ctest --test-dir $S --output-on-failure
-$B/cmake --build $S --target dmg              # → $S/BifrostStudio-1.0.0.dmg
+S=$HOME/Library/Caches/BifrostBuild          # keep the build directory outside the repo
+cmake -S . -B $S -DCMAKE_BUILD_TYPE=Release -DLIBUSB_ROOT=$HOME/.local
+cmake --build $S -j8                          # → "$S/Bifrost Studio.app"
+ctest --test-dir $S --output-on-failure
+cmake --build $S --target dmg                 # → $S/BifrostStudio-1.0.0.dmg
 ```
 
 ## Dependencies
 - **libusb:** universal static `~/.local/lib/libusb-1.0.a` (1.0.29; at least 1.0.28 is required).
 - **LZ4:** v1.10.0, fetched at configure time and pinned by commit, so the first configure needs network access.
+- **Android platform-tools:** r37.0.1 (`adb`), downloaded at configure time with a pinned SHA-256 and copied into the app's Resources. Needs network access on first configure.
 - **Security framework:** must stay linked, because static libusb uses `SecTask*`.
 
 ## Options

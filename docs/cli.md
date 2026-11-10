@@ -94,12 +94,7 @@ PROGRESS<TAB><phase><TAB><slot><TAB><entry><TAB><fileDone><TAB><fileTotal><TAB><
 | `fileDone/fileTotal` | Bytes of the current file |
 | `totalDone/total` | Bytes of the whole flash |
 
-```mermaid
-flowchart LR
-    A[Parse PROGRESS lines] --> B[phase] --> C{transferring or committing?}
-    C -->|yes| D[bar = totalDone / total]
-    C -->|no| E[show phase name]
-```
+A progress bar is `totalDone / total` while the phase is `transferring` or `committing`; otherwise show the phase name.
 
 ## Exit status
 
@@ -109,4 +104,4 @@ flowchart LR
 | 1 | `kExitFailure` | The command failed; for `plan`, the plan is not flashable |
 | 2 | `kExitUsage` | Bad or missing arguments, or an unknown command |
 
-Found in `src/cli/src/main.cpp`. I did not check every command's path, so a command could return another value. Treat any non-zero as failure.
+Defined in `src/cli/src/main.cpp`; no other exit values are returned.

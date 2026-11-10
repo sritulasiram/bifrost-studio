@@ -222,7 +222,7 @@ bifrost::Expected<std::size_t> Device::handleControl(const std::uint8_t* packet)
             return kControlPacketSize;
         }
         if (request == 1) {
-            violation("0x64/1 must never be sent (docs/project/requirements.md, S-4)");
+            violation("0x64/1 must never be sent (docs/requirements.md, S-4)");
             respond(0x64, 0);
             return kControlPacketSize;
         }

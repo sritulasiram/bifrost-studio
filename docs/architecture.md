@@ -40,13 +40,13 @@ flowchart TB
 
 | Module | Header | Responsibility |
 |---|---|---|
-| common | `common/error.hpp`, `cancel.hpp` | `ErrorCode`, `DataState`, `Expected<T>` (C++17), `CancelToken` with two levels |
+| common | `common/error.hpp`, `cancel.hpp` | `ErrorCode`, `DataState {none, partial, complete}`, `Expected<T>` (C++17), `CancelToken` with levels `beforeData` / `afterSequence` |
 | firmware | `firmware/package.hpp`, `lz4.hpp`, `naming.hpp`, `file_source.hpp` | MD5 trailer check, TAR parse, LZ4 frame decode, file-name heuristics, open-descriptor sources |
 | pit | `pit/pit.hpp` | Parse and validate the partition information table |
-| planner | `planner/plan.hpp` | Match package entries to PIT partitions; refusals, warnings, confirmations (rules in [protocol.md](protocol.md#planner-rules)) |
-| protocol | `protocol/session.hpp`, `packet.hpp` | Odin session, packets, file transfer ([protocol.md](protocol.md)) |
-| transport | `transport/transport.hpp` | `UsbTransport` and `ClaimedInterface` interfaces; libusb and remote implementations |
-| flash | `flash/flash.hpp` | The orchestration entry points |
+| planner | `planner/plan.hpp` | `buildPlan`, `samePlan`, `checkConfirmation`, `PlanSummary`. Match package entries to PIT partitions; refusals, warnings, confirmations (rules in [protocol.md](protocol.md#planner-rules)) |
+| protocol | `protocol/session.hpp`, `packet.hpp` | 1024-byte control packets; `Session` state machine `idle → open → closed \| failed`; file transfer in `src/protocol/file_transfer.cpp` ([protocol.md](protocol.md)) |
+| transport | `transport/transport.hpp`, `libusb_transport.hpp`, `descriptors.hpp`, `iokit_registry.hpp` | `UsbTransport` (enumerate, claim, hot-plug) and `ClaimedInterface` (bulk read/write, ZLP, drain); libusb and remote implementations; Odin interface selection |
+| flash | `flash/flash.hpp` | `loadPackages`, `probe`, `readDevicePit`, `flash` |
 | capi | `bifrost/bifrost.h` | Stable C surface; only `bf_*` is exported |
 
 ## Process model
@@ -72,21 +72,6 @@ flowchart LR
 - The app passes firmware as **file descriptors**, so the agent needs no folder access and a path can't be swapped mid-flash.
 - The agent keeps running if the app quits. A reconnecting client calls `status` to reattach and `subscribe` for live events.
 
-## Core layer details
-
-Namespace `bifrost::`, sources under `src/core`.
-
-| Layer | Header | Role |
-|---|---|---|
-| common | `common/error.hpp`, `common/cancel.hpp` | `ErrorCode`, `DataState {none, partial, complete}`, `Expected<T>`, `CancelToken` with levels `beforeData` / `afterSequence` |
-| transport | `transport/transport.hpp`, `libusb_transport.hpp`, `descriptors.hpp`, `iokit_registry.hpp` | `UsbTransport` (enumerate, claim, hot-plug) and `ClaimedInterface` (bulk read/write, ZLP, drain); libusb implementation; Odin interface selection |
-| protocol | `protocol/packet.hpp`, `protocol/session.hpp` | 1024-byte control packets; `Session` state machine `idle → open → closed \| failed`; file transfer in `src/protocol/file_transfer.cpp` |
-| firmware | `firmware/package.hpp`, `file_source.hpp`, `lz4.hpp`, `naming.hpp` | `.tar.md5` verification and TAR parsing, file sources from descriptors, LZ4 validate/stream, file-name parsing |
-| pit | `pit/pit.hpp` | PIT parsing, compare |
-| planner | `planner/plan.hpp` | `buildPlan`, `samePlan`, `checkConfirmation`, `PlanSummary` |
-| flash | `flash/flash.hpp` | `loadPackages`, `probe`, `readDevicePit`, `flash` |
-| C API | `bifrost.h` | Stable C ABI (`libbifrost.dylib`), used by the app |
-
 ## A flash, step by step
 
 `flash::flash` in `src/core/src/flash/flash.cpp` (contract in `flash.hpp`):
@@ -109,7 +94,7 @@ flowchart TD
 
 Rules that shape this flow:
 
-- A flash is the **first and only** Odin session after entering Download Mode ([../project/requirements.md](../project/requirements.md), F-40).
+- A flash is the **first and only** Odin session after entering Download Mode ([requirements.md](requirements.md), F-40).
 - The plan built inside the session must equal the offline plan the user reviewed (`samePlan`); otherwise the flash refuses before sending data.
 - Every failure carries a `DataState`. Callers choose recovery guidance from `ErrorCode` + `DataState`, never from message text.
 
@@ -144,50 +129,20 @@ A cancel persists until reset. In-process callers call `bf_cancel_reset` before 
 
 ## Errors
 
-```mermaid
-flowchart LR
-    subgraph input["Input and files"]
-        e1[invalid-argument]:::a
-        e2[io]:::a
-        e3[package-invalid]:::a
-        e4[checksum-mismatch]:::a
-        e5[archive-unsupported]:::a
-        e6[lz4-invalid]:::a
-        e7[insufficient-space]:::a
-        e8[file-changed]:::a
-    end
-    subgraph planning["Planning"]
-        p1[pit-invalid]:::b
-        p2[plan-refused]:::b
-        p3[model-mismatch]:::b
-    end
-    subgraph usb["USB and protocol"]
-        u1[usb-disconnected]:::c
-        u2[usb-timeout]:::c
-        u3[usb-stall]:::c
-        u4[usb-access]:::c
-        u5[usb-other]:::c
-        u6[protocol-violation]:::c
-        u7[bootloader-rejected]:::c
-    end
-    subgraph control["Control"]
-        c1[cancelled]:::d
-        c2[illegal-state]:::d
-        c3[service-unavailable]:::d
-    end
-    classDef a fill:#e8f1ff,stroke:#4a7bd0
-    classDef b fill:#fff4d6,stroke:#c99a1a
-    classDef c fill:#ffe3e3,stroke:#cc4a4a
-    classDef d fill:#ececec,stroke:#777
-```
+| Group | Codes |
+|---|---|
+| Input and files | `invalid-argument`, `io`, `package-invalid`, `checksum-mismatch`, `archive-unsupported`, `lz4-invalid`, `insufficient-space`, `file-changed` |
+| Planning | `pit-invalid`, `plan-refused`, `model-mismatch` |
+| USB and protocol | `usb-disconnected`, `usb-timeout`, `usb-stall`, `usb-access`, `usb-other`, `protocol-violation`, `bootloader-rejected` |
+| Control | `cancelled`, `illegal-state`, `service-unavailable` |
 
-`DataState` is orthogonal to the code: `none`, `partial` (some partition data may have been written) or `complete` (all data acknowledged; only close/reboot failed). Numeric values and names are in [../reference/c-api.md](../reference/c-api.md#errors).
+`DataState` is orthogonal to the code: `none`, `partial` (some partition data may have been written) or `complete` (all data acknowledged; only close/reboot failed). Numeric values and names are in [c-api.md](c-api.md#errors).
 
 ## Source layout
 
 ```
 CMakeLists.txt              top level: options, LZ4 fetch, subdirectories
-README.md  CLAUDE.md  THIRD-PARTY-NOTICES.txt
+README.md  CONTRIBUTING.md  THIRD-PARTY-NOTICES.txt
 src/
   core/                     C++17 library
     include/bifrost/…       public headers (see the layer table above)
@@ -199,7 +154,7 @@ src/
     src/                    implementation; agent_main.cpp, usbd_main.cpp, service_config.hpp.in
   cli/src/                  main.cpp (direct commands), agent_commands.cpp (agent …)
   app/                      SwiftUI app and the bundle build (CMakeLists.txt)
-    Sources/                see docs/design/app.md
+    Sources/                see docs/app.md
     Resources/              create_app_icon.swift, icon/*.svg
     Info.plist.in
 packaging/
@@ -210,6 +165,6 @@ tests/
   support/                  test_support.hpp, sim_device.* (bootloader simulator)
   fixtures/                 SM-N920I.pit (real device PIT)
   fuzz/                     fuzz targets, standalone driver, corpus/
-docs/                       reference docs (see docs/README.md)
+docs/                       documentation (index in README.md)
 .github/workflows/ci.yml
 ```

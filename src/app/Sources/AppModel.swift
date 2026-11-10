@@ -124,6 +124,9 @@ final class AppModel: ObservableObject {
     @Published var lastBackup: URL?
     /// The last device job timed out before sending data: the handshake guess may be wrong.
     @Published var handshakeSuspect = false
+    /// The phone stayed silent. Every attempt resets its USB, so further attempts
+    /// in the same Download Mode entry only make it worse: wait for a restart.
+    @Published var needsRestart = false
 
     private var agent: AgentConnection?
     private var connectionGeneration = 0
@@ -228,7 +231,10 @@ final class AppModel: ObservableObject {
         if inDownload.isEmpty {
             if absentSince == nil { absentSince = Date() }
         } else {
-            if let since = absentSince, Date().timeIntervalSince(since) > 3 { handshakeDone = false }
+            if let since = absentSince, Date().timeIntervalSince(since) > 3 {
+                handshakeDone = false
+                needsRestart = false
+            }
             absentSince = nil
         }
         if let selected = selectedDevice, !inDownload.contains(where: { $0.id == selected }) {
@@ -300,8 +306,10 @@ final class AppModel: ObservableObject {
             // Failures before the session could not have consumed the handshake.
             let preSession = [BifrostError.serviceUnavailable, BifrostError.usbAccess,
                               BifrostError.usbDisconnected].contains(error.code)
+            let silentTimeout = error.code == BifrostError.usbTimeout && error.dataState == .none
             if !preSession { handshakeDone = true }
-            handshakeSuspect = error.code == BifrostError.usbTimeout && error.dataState == .none
+            handshakeSuspect = silentTimeout
+            if silentTimeout { needsRestart = true }
         } else {
             handshakeSuspect = false
             handshakeDone = !result.rebooted
@@ -330,7 +338,7 @@ final class AppModel: ObservableObject {
     // MARK: Device jobs
 
     var canStartJob: Bool {
-        agent != nil && selectedDevice != nil && !(job?.running ?? false)
+        agent != nil && selectedDevice != nil && !(job?.running ?? false) && !needsRestart
     }
 
     func probe() { start(.probe) { try $0.startProbe($1, resume: self.handshakeDone) } }
@@ -380,6 +388,7 @@ final class AppModel: ObservableObject {
     func phoneWasRestarted() {
         handshakeDone = false
         handshakeSuspect = false
+        needsRestart = false
     }
 
     /// The model is taken from the firmware; the core still checks it against the plan.

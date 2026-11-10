@@ -1,6 +1,6 @@
 # Requirements
 
-Every requirement, with its status on 2026-11-08. IDs are stable, so code comments and issues cite them (for example F-40, S-4).
+Every requirement, with its status on 2026-11-08 (hardware scope in P-3 and P-4, and F-83 and F-84, added 2026-11-10). IDs are stable, so code comments and issues cite them (for example F-40, S-4).
 
 **Status values**
 - **Met**: implemented and covered by tests, or observed on hardware.
@@ -11,14 +11,14 @@ Every requirement, with its status on 2026-11-08. IDs are stable, so code commen
 
 ## Status at a glance
 
-93 requirements (counted from the tables below; "Met in tests; UNVERIFIED under launchd" counts as UNVERIFIED).
+95 requirements (counted from the tables below; "Met in tests; UNVERIFIED under launchd" counts as UNVERIFIED).
 
 ```mermaid
 pie showData title Requirements by status (2026-11-08)
     "Met" : 77
     "Partly met" : 5
     "Not met" : 7
-    "UNVERIFIED" : 2
+    "UNVERIFIED" : 4
     "Process" : 2
 ```
 
@@ -26,27 +26,17 @@ Open items, by area:
 
 | Area | Open requirements |
 |---|---|
-| Scope | P-3, P-4 (only the SM-N920I tested) |
+| Scope | P-3, P-4 (SM-N915G, SM-N920I and SM-N950F tested; SM-N986U1 in testing) |
 | Devices | F-3 (hot-plug path untested end to end) |
 | Background | F-80, F-82 (UNVERIFIED under launchd) |
+| Android tools | F-83, F-84 (UNVERIFIED on hardware) |
 | Security | SEC-4, SEC-5 (no Team ID) |
 | Reliability | R-4 (no persisted job journal) |
 | UX | UX-6 (String Catalogs) |
 | Distribution | D-2, D-3, D-5, D-6 (not shareable yet) |
 | Engineering | E-4 (CI never run) |
 
-```mermaid
-flowchart LR
-    subgraph blockers["Before sharing the DMG"]
-        D2[D-2 notarization] --- D3[D-3 dynamic libusb] --- D5[D-5 bundle ID] --- D6[D-6 trademark check] --- SEC5[SEC-5 Team ID]
-    end
-    subgraph hardening["Hardening"]
-        R4[R-4 job journal] --- E4[E-4 first CI run] --- F80[F-80 / F-82 launchd checks]
-    end
-    subgraph coverage["Coverage"]
-        P3[P-3 / P-4 more phones] --- F3[F-3 hot-plug path] --- UX6[UX-6 localisation]
-    end
-```
+Before sharing the DMG: D-2, D-3, D-5, D-6, SEC-5. Hardening: R-4, E-4, F-80, F-82. Coverage: P-3, P-4, F-3, UX-6.
 
 ## Product and scope
 
@@ -54,8 +44,8 @@ flowchart LR
 |---|---|---|
 | P-1 | The product is named **Bifrost Studio** (working name "Gungnir"). | Met |
 | P-2 | Target: macOS 13 or newer, as one universal binary (arm64 + x86_64). | Met (built and run on Intel only) |
-| P-3 | Works with phones that Odin and Loke can flash, i.e. Samsung phones in Download Mode. | Partly met: tested only on the SM-N920I (Galaxy Note 5) |
-| P-4 | Supports every Samsung device and region. The model is detected automatically: from the firmware file names, and by checking the CSC's embedded PIT against the phone's PIT. | Partly met: implemented; only the SM-N920I has been tested |
+| P-3 | Works with phones that Odin and Loke can flash, i.e. Samsung phones in Download Mode. | Partly met: tested on the SM-N915G, SM-N920I and SM-N950F; SM-N986U1 in testing |
+| P-4 | Supports every Samsung device and region. The model is detected automatically: from the firmware file names, and by checking the CSC's embedded PIT against the phone's PIT. | Partly met: implemented; tested on the SM-N915G, SM-N920I and SM-N950F; SM-N986U1 in testing |
 | P-5 | Parts: a C++17 core with a stable C API, a command-line tool, a SwiftUI app, a background agent and a root USB helper. | Met |
 | P-6 | Distributed as a DMG only. No Homebrew. | Met (DMG is ad-hoc signed; see D-2) |
 
@@ -88,10 +78,10 @@ flowchart LR
 | ID | Requirement | Status |
 |---|---|---|
 | F-20 | Read the phone's PIT in a read-only session (Tools › PIT Backup, or `read-pit`). | Met (SM-N920I, 8192 bytes) |
-| F-21 | Parse PITs, including identifiers repeated across UFS logical units. Refuse duplicate partition **names**. | Met |
+| F-21 | Parse PITs, including identifiers and partition names repeated across UFS logical units (for example XBL in the SM-N986U1 firmware PIT). `compare()` pairs repeated names by occurrence; the planner refuses any image that matches more than one partition. | Met |
 | F-22 | Map each archive entry to a partition. A PIT `flashFilename` must equal the entry name exactly, or the entry name minus `.lz4` (case-sensitive). | Met |
 | F-23 | Skip `meta-data/*` and root-level `*.pit` entries, and say why. Refuse any other entry that doesn't map to a partition. | Met |
-| F-24 | Always refuse: modem-type targets (PIT binary type 1), targets whose identifier is shared, duplicate partitions, ambiguous matches, empty images, a package in the wrong slot by its file name, and packages for different models. | Met |
+| F-24 | Always refuse: modem-type targets (PIT binary type 1), targets whose identifier is shared, images matching more than one partition (repeated PIT names are allowed), ambiguous matches, empty images, a package in the wrong slot by its file name, and packages for different models. | Met |
 | F-25 | Refuse a firmware whose embedded PIT differs from the phone's PIT in layout or size, because re-partitioning is not supported. | Met |
 | F-26 | Flash in this order: BL, AP, CP, CSC, USERDATA. | Met |
 | F-27 | Let the user review the plan without opening a session on the phone, using the firmware's embedded PIT or a PIT file. | Met (2026-11-08) |
@@ -150,6 +140,13 @@ flowchart LR
 | F-81 | Only one job runs at a time. Clients can reattach (status snapshot plus the last 500 log lines) and subscribe to live events. | Met |
 | F-82 | On logout or unregistering, the agent asks a running flash to stop at the next safe point, within launchd's `ExitTimeOut` of 300 s. | UNVERIFIED |
 
+### Android tools
+
+| ID | Requirement | Status |
+|---|---|---|
+| F-83 | Bundled Android platform-tools: reboot a phone to Download Mode or Recovery with `adb` from the app's Tools. | UNVERIFIED |
+| F-84 | TWRP preparation: load a chosen TWRP `.img.tar` as the only AP file with automatic restart off. It never unlocks a bootloader. | UNVERIFIED |
+
 ## Safety requirements
 
 These come first and override convenience.
@@ -158,7 +155,7 @@ These come first and override convenience.
 |---|---|---|
 | S-1 | **Fail safe:** refuse on any ambiguity. | Met (enforced by the planner and the session) |
 | S-2 | Never claim a device behaviour works without a test or a cited source. Mark anything else UNVERIFIED. | Process |
-| S-3 | **No destructive features** (re-partitioning, NAND erase, userdata erase) unless the owner approves a design. | Met (none exist) |
+| S-3 | **No destructive features** (re-partitioning, NAND erase, userdata erase) unless the maintainer approves a design. | Met (none exist) |
 | S-4 | **Never send `0x64/1`.** Its meaning is disputed. | Met (the simulator fails any test that sends it) |
 | S-5 | Refuse modem-type targets (PIT binary type 1) until hardware settles their end-of-sequence layout. | Met |
 | S-6 | Treat any negative status from the bootloader as a failure. | Met |
@@ -223,4 +220,4 @@ These come first and override convenience.
 | E-4 | CI: universal build, tests, and a fuzz job. | Partly met: written but never run on GitHub |
 | E-5 | `libbifrost.dylib` exports only `bf_*` symbols, and its header compiles as C99. | Met (tested) |
 | E-6 | Build directories live outside the repository. | Met |
-| E-7 | Commit only when the owner asks. | Process |
+| E-7 | Commit only when the maintainer asks. | Process |

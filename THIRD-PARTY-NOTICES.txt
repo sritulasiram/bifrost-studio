@@ -546,4 +546,8 @@ necessary.  Here is a sample; alter the names:
 
 That's all there is to it!
 
-
+2. Android SDK Platform-Tools (adb), version 37.0.1
+   https://developer.android.com/tools/releases/platform-tools
+   Copyright (c) The Android Open Source Project. Licensed under the Apache
+   License 2.0 (see the NOTICE.txt shipped in Resources/platform-tools).
+   Downloaded unmodified from dl.google.com at build time, not stored in the repo.

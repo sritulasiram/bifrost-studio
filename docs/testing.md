@@ -47,20 +47,11 @@ flowchart TB
 | `test_capi_agent` | The C agent client against a real agent (Apple only) |
 | `fuzz_*` | Parsers must never crash or hang on hostile input |
 
-The simulator is **not** evidence of real bootloader behaviour. It shows the host side is consistent and reacts safely to faults. Device behaviour counts as verified only after a hardware run, so keep [../project/hardware.md](../project/hardware.md) as the record.
+The simulator is **not** evidence of real bootloader behaviour. It shows the host side is consistent and reacts safely to faults. Device behaviour counts as verified only after a hardware run, so keep [hardware.md](hardware.md) as the record.
 
 ## Bootloader simulator (`tests/support/sim_device.*`)
 
 `sim::Device` implements `ClaimedInterface` and models an Odin bootloader from a PIT, then records what reached each partition (`PartitionWrite`: bytes, complete, binary type, device type, sequences).
-
-```mermaid
-flowchart LR
-    T[Test] -->|Config: pit, protocolVersion, faults| D[sim::Device]
-    D --> F[flash::flash or Session]
-    F -->|bulkWrite / bulkRead / zlp| D
-    D --> W[(Per-partition writes)]
-    W --> A[Assert every byte reached the right partition]
-```
 
 ### Fault injection (`sim::Faults`)
 
@@ -78,6 +69,10 @@ flowchart LR
 | `rebootSilent` | No reboot reply, stays attached |
 
 Config also has `requireZlpAfterControl` (default on, models the SM-N920I), `advertiseCompression`, and an `onPart` hook to hold a transfer open (used for cancel tests).
+
+## Simulator checks
+
+Beyond recording writes, the simulator enforces protocol rules and fails a test when the host breaks one: phase order, sizes, padding, PIT fields, the announced total, one handshake per Download Mode entry, a zero-length packet after control packets (once the part size is set) and never `0x64/1` (S-4).
 
 ## Fuzzers
 
@@ -107,17 +102,7 @@ Notes:
 
 ## Export check
 
-```mermaid
-flowchart LR
-    L[libbifrost.dylib] -->|nm -gU| N[exported symbols]
-    N --> C1{any not starting _bf_?}
-    C1 -->|yes| F[fail: unexpected exports]
-    C1 -->|no| C2{fewer than 40 bf_ symbols?}
-    C2 -->|yes| F2[fail: too few]
-    C2 -->|no| P[pass]
-```
-
-The allowed export list is `src/core/src/capi/exports.txt`.
+`check_exports.sh` runs `nm -gU` on `libbifrost.dylib` and fails if any exported symbol does not start with `_bf_`, or if fewer than 40 `bf_` symbols are exported. The allowed export list is `src/core/src/capi/exports.txt`.
 
 ## Adding a test
 
@@ -125,19 +110,15 @@ The allowed export list is `src/core/src/capi/exports.txt`.
 2. Use `tests/support/test_support.hpp` for helpers and `sim_device.hpp` when you need a phone.
 3. For a protocol change, add a simulator fault case first, and keep the claim that it works UNVERIFIED until it runs on hardware.
 
-## Simulator checks
-
-Beyond recording writes, the simulator enforces protocol rules and fails a test when the host breaks one: phase order, sizes, padding, PIT fields, the announced total, one handshake per Download Mode entry, a zero-length packet after control packets (once the part size is set) and never `0x64/1` (S-4).
-
 ## Running the fuzzers locally
 
-`B` is the cmake bin directory from [build-and-install.md](build-and-install.md).
+Build prerequisites are in [build-and-install.md](build-and-install.md).
 
 ```sh
 F=$HOME/Library/Caches/BifrostFuzz
-$B/cmake -S . -B $F -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_OSX_ARCHITECTURES=$(uname -m) \
+cmake -S . -B $F -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_OSX_ARCHITECTURES=$(uname -m) \
     -DBIFROST_FUZZ=ON -DBIFROST_ENABLE_USB=OFF -DBIFROST_BUILD_APP=OFF
-$B/cmake --build $F -j8 && $B/ctest --test-dir $F --output-on-failure
+cmake --build $F -j8 && ctest --test-dir $F --output-on-failure
 ```
 
 Apple clang has no libFuzzer runtime, so locally the targets use the weaker random-mutation driver. CI uses Homebrew LLVM.

@@ -82,7 +82,7 @@ Status Session::transferFile(const PartitionTarget& target, std::uint64_t size,
     }
     if (target.binaryType == pit::kBinaryCommunicationProcessor) {
         // References disagree on the modem end-of-sequence layout
-        // (docs/design/protocol.md, "Open protocol questions"); refuse before sending anything.
+        // (docs/protocol.md, "Open protocol questions"); refuse before sending anything.
         return makeError(ErrorCode::planRefused,
                          "Modem-type (CP binary) partitions are not supported yet");
     }

@@ -8,7 +8,7 @@ Sources: `src/service/include/bifrost/service/wire.hpp`, `agent.hpp`, `usb_servi
 - Every reply carries `ok` (bool). A failed reply carries `error`, an encoded `bifrost::Error` (code, message, data state, native code).
 - Events have `event` (string) and no reply.
 - **`kWireVersion` is 1.** Peers must match exactly; a different `version` is refused.
-- Peers are authenticated with `xpc_connection_set_peer_code_signing_requirement`. Without `-DBIFROST_TEAM_ID` it matches the signing identifier only ([../design/services.md](../design/services.md), SEC-4/SEC-5).
+- Peers are authenticated with `xpc_connection_set_peer_code_signing_requirement`. Without `-DBIFROST_TEAM_ID` it matches the signing identifier only ([services.md](services.md), SEC-4/SEC-5).
 - XPC failures map to `serviceUnavailable` (connection interrupted or invalid) or a requirement error (peer failed its signing check).
 
 ```mermaid
@@ -140,4 +140,4 @@ flowchart TD
     C -->|yes| E[normal requests]
 ```
 
-Any incompatible change to the encoding must bump `kWireVersion`. The app, CLI, agent and helper ship together, so a mismatch normally means a stale launchd job after an upgrade (restart both services; see [../guides/build-and-install.md](../guides/build-and-install.md)).
+Any incompatible change to the encoding must bump `kWireVersion`. The app, CLI, agent and helper ship together, so a mismatch normally means a stale launchd job after an upgrade (restart both services; see [build-and-install.md](build-and-install.md)).

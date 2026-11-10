@@ -185,11 +185,12 @@ struct HandshakeToggle: View {
         if always || model.handshakeSuspect {
             VStack(alignment: .leading, spacing: 6) {
                 if model.handshakeSuspect {
-                    Label("The last attempt timed out before any data was sent. Restart the phone into Download Mode, or change this setting.",
+                    Label("The last attempt timed out before any data was sent. Restart the phone into Download Mode before trying again; repeated attempts keep resetting it. Or change this setting.",
                           systemImage: "exclamationmark.triangle")
                         .font(.callout).foregroundStyle(.orange)
                 }
-                Toggle(isOn: $model.handshakeDone) {
+                Toggle(isOn: Binding(get: { model.handshakeDone },
+                             set: { model.handshakeDone = $0; model.needsRestart = false })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Phone already used in this Download Mode session")
                         Text("The phone answers the connection handshake once each time it enters Download Mode. Bifrost Studio sets this automatically.")
