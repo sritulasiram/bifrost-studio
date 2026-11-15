@@ -42,6 +42,11 @@ struct OdinInterface {
 // CDC Data interface with bulk endpoints, so the interface shape alone does
 // not identify Download Mode (hardware test, 2026-11-08).
 bool isDownloadModeProductId(std::uint16_t productId) noexcept;
+/// Android USB configuration (not Download Mode). Must not be claimed as Odin.
+bool isSamsungAndroidProductId(std::uint16_t productId) noexcept;
+/// One-configuration Samsung devices may be Download Mode with an unlisted PID.
+bool shouldProbeSamsungConfiguration(std::uint16_t productId,
+                                     std::uint8_t numConfigurations) noexcept;
 
 std::optional<OdinInterface> findOdinInterface(
     const std::vector<AlternateSetting>& alternates);

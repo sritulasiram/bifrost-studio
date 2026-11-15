@@ -75,7 +75,8 @@ struct HistoryView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle("History")
+            .navigationTitle(L10n.history)
+            .accessibilityElement(children: .contain)
         } else {
             HSplitView {
                 list.frame(minWidth: 240, idealWidth: 270, maxWidth: 340)
@@ -142,12 +143,42 @@ struct HistoryView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
     }
 
+    private var clusterByEntry: [UUID: FailureCluster] {
+        var map: [UUID: FailureCluster] = [:]
+        for cluster in model.failureClusters {
+            for id in cluster.entryIDs { map[id] = cluster }
+        }
+        return map
+    }
+
     private var list: some View {
         List(selection: $model.selectedHistoryID) {
+            if !model.failureClusters.isEmpty && (filter == .all || filter == .failed) {
+                Section("Repeated failures") {
+                    ForEach(model.failureClusters) { cluster in
+                        Button {
+                            if let first = model.history.first(where: { cluster.entryIDs.contains($0.id) }) {
+                                model.selectedHistoryID = first.id
+                            }
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(cluster.codeName) · \(cluster.model)").font(.callout)
+                                    Text("\(cluster.count) failures with the same error")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
             ForEach(days, id: \.day) { group in
                 Section(dayTitle(group.day)) {
                     ForEach(group.entries) { entry in
-                        HistoryRow(entry: entry)
+                        HistoryRow(entry: entry, cluster: clusterByEntry[entry.id])
                             .contextMenu {
                                 Button("Export Log…") { exportText(entry) }
                                 Button("Delete", role: .destructive) { model.deleteHistory([entry.id]) }
@@ -200,6 +231,7 @@ struct HistoryView: View {
 
 private struct HistoryRow: View {
     let entry: HistoryEntry
+    var cluster: FailureCluster?
 
     var body: some View {
         HStack {
@@ -212,6 +244,14 @@ private struct HistoryRow: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if let cluster {
+                Text("×\(cluster.count)")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(Color.orange.opacity(0.2)))
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel("\(cluster.count) similar failures")
+            }
             if let duration = entry.duration {
                 Text(formatDuration(duration)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
@@ -229,6 +269,25 @@ private struct HistoryDetail: View {
             Section { header }
             if let error = entry.error {
                 Section { RecoveryCard(error: error, rebooted: false) }
+            }
+            let related = model.similarFailures(to: entry)
+            if !related.isEmpty {
+                Section("Same error elsewhere") {
+                    ForEach(related) { other in
+                        Button {
+                            model.selectedHistoryID = other.id
+                        } label: {
+                            HStack {
+                                Text(other.date.formatted(date: .abbreviated, time: .shortened))
+                                Spacer()
+                                Text(other.device.isEmpty ? "Unknown" : other.device)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    Text("These entries share \(entry.error?.codeName ?? "this error") for \(entry.model.isEmpty ? "this device" : entry.model).")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             Section("Summary") { summary }
             if !entry.files.isEmpty {

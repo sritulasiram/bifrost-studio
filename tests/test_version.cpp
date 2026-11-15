@@ -4,5 +4,5 @@
 
 int main()
 {
-    return std::string_view(bifrost_core_version()) == "1.0.0" ? 0 : 1;
+    return std::string_view(bifrost_core_version()) == "1.1.0" ? 0 : 1;
 }

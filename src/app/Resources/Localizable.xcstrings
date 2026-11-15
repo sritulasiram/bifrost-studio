@@ -1,0 +1,226 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Android" : {
+      "comment" : "Sidebar: adb / fastboot tools workspace.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Android"
+          }
+        }
+      }
+    },
+    "Back" : {
+      "comment" : "Flash flow: return to Setup.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        }
+      }
+    },
+    "Bifrost Studio Help" : {
+      "comment" : "Help menu: user guide.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bifrost Studio Help"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "comment" : "Flash flow: advance to next step.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        }
+      }
+    },
+    "Continue to review" : {
+      "comment" : "Accessibility hint for Continue on Setup.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue to review"
+          }
+        }
+      }
+    },
+    "Device" : {
+      "comment" : "Sidebar: probe and PIT backup.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Device"
+          }
+        }
+      }
+    },
+    "Devices" : {
+      "comment" : "Sidebar section for connected phones.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devices"
+          }
+        }
+      }
+    },
+    "Flash" : {
+      "comment" : "Sidebar and menu: firmware flash workflow.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flash"
+          }
+        }
+      }
+    },
+    "Flash progress" : {
+      "comment" : "VoiceOver label for in-flash progress bar.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flash progress"
+          }
+        }
+      }
+    },
+    "Flash step" : {
+      "comment" : "Flash flow step title (in-progress flash).",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flash"
+          }
+        }
+      }
+    },
+    "Firmware verification progress" : {
+      "comment" : "VoiceOver label while packages are hashed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Firmware verification progress"
+          }
+        }
+      }
+    },
+    "History" : {
+      "comment" : "Sidebar: past jobs.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "History"
+          }
+        }
+      }
+    },
+    "Inspect" : {
+      "comment" : "Sidebar: offline package / PIT inspect.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inspect"
+          }
+        }
+      }
+    },
+    "No phone" : {
+      "comment" : "Sidebar placeholder when no USB device is listed.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No phone"
+          }
+        }
+      }
+    },
+    "Review & Confirm" : {
+      "comment" : "Flash flow step before writing images.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review & Confirm"
+          }
+        }
+      }
+    },
+    "Running" : {
+      "comment" : "Sidebar badge when a flash job is active.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running"
+          }
+        }
+      }
+    },
+    "Safety & design" : {
+      "comment" : "Help menu: bundled Design.md.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safety & design"
+          }
+        }
+      }
+    },
+    "Setup" : {
+      "comment" : "Flash flow: choose firmware files.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setup"
+          }
+        }
+      }
+    },
+    "Sidebar" : {
+      "comment" : "Accessibility label for navigation column.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sidebar"
+          }
+        }
+      }
+    },
+    "Workspace" : {
+      "comment" : "Sidebar section for main tools.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workspace"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

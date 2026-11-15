@@ -31,7 +31,10 @@ configure_file(
 
 # create_app_icon.swift is a script with top-level code; it runs as a build
 # step and must not be compiled into the app.
-file(GLOB BIFROST_APP_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Sources/*.swift")
+file(GLOB_RECURSE BIFROST_APP_SOURCES CONFIGURE_DEPENDS
+    LIST_DIRECTORIES false
+    "${CMAKE_CURRENT_SOURCE_DIR}/Sources/*.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Sources/*/*.swift")
 
 if(CMAKE_GENERATOR STREQUAL "Xcode")
     enable_language(Swift)
@@ -63,6 +66,19 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
             "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Library/LaunchDaemons/${BIFROST_USBD_LABEL}.plist"
         COMMAND "${CMAKE_COMMAND}" -E make_directory
             "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources"
+            "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/en.lproj"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Localizable.xcstrings"
+            "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/Localizable.xcstrings"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/Resources/en.lproj/Localizable.strings"
+            "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/en.lproj/Localizable.strings"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${PROJECT_SOURCE_DIR}/docs/using.md"
+            "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/UserGuide.md"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Design.md"
+            "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/Design.md"
         COMMAND "${SWIFT_EXECUTABLE}" "${BIFROST_ICON_SCRIPT}"
             "$<TARGET_BUNDLE_DIR:BifrostStudio>/Contents/Resources/AppIcon.icns"
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${BIFROST_NOTICES}"
@@ -107,6 +123,26 @@ set(BIFROST_SWIFT_FLAGS -parse-as-library
 set(BIFROST_APP_ARM64 "${CMAKE_BINARY_DIR}/BifrostStudio-arm64")
 set(BIFROST_APP_X86_64 "${CMAKE_BINARY_DIR}/BifrostStudio-x86_64")
 
+set(BIFROST_LIBUSB_BUNDLE_STEPS)
+if(BIFROST_LIBUSB_BUNDLE)
+    set(BIFROST_LIBUSB_FRAMEWORK
+        "${BIFROST_APP_BUNDLE}/Contents/Frameworks/libusb-1.0.0.dylib")
+    set(_bifrost_libusb_copying "${LIBUSB_ROOT}/share/doc/libusb/COPYING")
+    if(NOT EXISTS "${_bifrost_libusb_copying}")
+        set(_bifrost_libusb_copying "${PROJECT_SOURCE_DIR}/packaging/libusb-COPYING.txt")
+    endif()
+    list(APPEND BIFROST_LIBUSB_BUNDLE_STEPS
+        COMMAND "${CMAKE_COMMAND}" -E copy "${BIFROST_LIBUSB_BUNDLE}"
+            "${BIFROST_LIBUSB_FRAMEWORK}"
+        COMMAND install_name_tool -id "@rpath/libusb-1.0.0.dylib"
+            "${BIFROST_LIBUSB_FRAMEWORK}")
+    list(APPEND BIFROST_LIBUSB_BUNDLE_STEPS
+        COMMAND "${CMAKE_COMMAND}" -E copy "${_bifrost_libusb_copying}"
+            "${BIFROST_APP_BUNDLE}/Contents/Resources/libusb-COPYING.txt")
+endif()
+
+set(BIFROST_CODESIGN_SCRIPT "${PROJECT_SOURCE_DIR}/packaging/codesign-app.sh")
+
 add_custom_command(
     OUTPUT "${BIFROST_APP_EXECUTABLE}" "${BIFROST_APP_PLIST}"
         "${BIFROST_APP_ICON}"
@@ -115,6 +151,20 @@ add_custom_command(
         "${BIFROST_APP_AGENT_PLIST}" "${BIFROST_APP_USBD_PLIST}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${BIFROST_APP_BUNDLE}/Contents/MacOS"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${BIFROST_APP_BUNDLE}/Contents/Resources"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+        "${BIFROST_APP_BUNDLE}/Contents/Resources/en.lproj"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Localizable.xcstrings"
+        "${BIFROST_APP_BUNDLE}/Contents/Resources/Localizable.xcstrings"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/Resources/en.lproj/Localizable.strings"
+        "${BIFROST_APP_BUNDLE}/Contents/Resources/en.lproj/Localizable.strings"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${PROJECT_SOURCE_DIR}/docs/using.md"
+        "${BIFROST_APP_BUNDLE}/Contents/Resources/UserGuide.md"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Design.md"
+        "${BIFROST_APP_BUNDLE}/Contents/Resources/Design.md"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${BIFROST_APP_BUNDLE}/Contents/Frameworks"
     COMMAND "${CMAKE_COMMAND}" -E make_directory
         "${BIFROST_APP_BUNDLE}/Contents/Library/LaunchAgents"
@@ -135,6 +185,7 @@ add_custom_command(
         "${CMAKE_BINARY_DIR}/BifrostStudio-Info.plist" "${BIFROST_APP_PLIST}"
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:bifrost-cli>" "${BIFROST_APP_CLI}"
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:Bifrost>" "${BIFROST_APP_LIB}"
+    ${BIFROST_LIBUSB_BUNDLE_STEPS}
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:bifrost-agent>" "${BIFROST_APP_AGENT}"
     COMMAND "${CMAKE_COMMAND}" -E copy "$<TARGET_FILE:bifrost-usbd>" "${BIFROST_APP_USBD}"
     COMMAND "${CMAKE_COMMAND}" -E copy
@@ -145,16 +196,12 @@ add_custom_command(
     COMMAND "${CMAKE_COMMAND}" -E rm -rf "${BIFROST_APP_BUNDLE}/Contents/Resources/platform-tools"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${BIFROST_PT_DIR}"
         "${BIFROST_APP_BUNDLE}/Contents/Resources/platform-tools"
-    # Ad-hoc signatures with explicit identifiers: the agent and the USB
-    # helper check their peers against these identifiers.
-    COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - "${BIFROST_APP_LIB}"
-    COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - -i "${BIFROST_CLI_IDENTIFIER}"
-        "${BIFROST_APP_CLI}"
-    COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - -i "${BIFROST_AGENT_LABEL}"
-        "${BIFROST_APP_AGENT}"
-    COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - -i "${BIFROST_USBD_LABEL}"
-        "${BIFROST_APP_USBD}"
-    COMMAND "${CODESIGN_EXECUTABLE}" --force --sign - "${BIFROST_APP_BUNDLE}"
+    COMMAND "${CMAKE_COMMAND}" -E env
+        BIFROST_SIGN_IDENTITY=${BIFROST_SIGN_IDENTITY}
+        BIFROST_CLI_IDENTIFIER=${BIFROST_CLI_IDENTIFIER}
+        BIFROST_AGENT_LABEL=${BIFROST_AGENT_LABEL}
+        BIFROST_USBD_LABEL=${BIFROST_USBD_LABEL}
+        "${BIFROST_CODESIGN_SCRIPT}" "${BIFROST_APP_BUNDLE}" "${BIFROST_SIGN_IDENTITY}"
     DEPENDS
         ${BIFROST_APP_SOURCES}
         Bifrost
@@ -169,13 +216,18 @@ add_custom_command(
     VERBATIM
 )
 
-# Not notarized: no Developer ID (owner has no Apple Developer account).
 add_custom_target(dmg
     COMMAND "${PROJECT_SOURCE_DIR}/packaging/make-dmg.sh"
         "${BIFROST_APP_BUNDLE}"
         "${CMAKE_BINARY_DIR}/BifrostStudio-${PROJECT_VERSION}.dmg" "${PROJECT_VERSION}"
     DEPENDS BifrostStudio
     COMMENT "Building BifrostStudio-${PROJECT_VERSION}.dmg"
+    VERBATIM)
+add_custom_target(release
+    COMMAND "${PROJECT_SOURCE_DIR}/packaging/release.sh"
+        "${CMAKE_BINARY_DIR}" "${PROJECT_VERSION}"
+    DEPENDS BifrostStudio
+    COMMENT "Sign, DMG, and optionally notarize (set BIFROST_NOTARIZE=1)"
     VERBATIM)
 add_custom_target(BifrostStudio ALL
     DEPENDS "${BIFROST_APP_EXECUTABLE}" "${BIFROST_APP_PLIST}"

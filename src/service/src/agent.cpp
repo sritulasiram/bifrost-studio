@@ -1,5 +1,6 @@
 #include "bifrost/service/agent.hpp"
 
+#include "bifrost/service/journal.hpp"
 #include "bifrost/firmware/file_source.hpp"
 #include "bifrost/flash/flash.hpp"
 #include "bifrost/pit/pit.hpp"
@@ -36,6 +37,7 @@ struct FlashRequest {
     std::vector<flash::SlotPath> packages;
     std::string typedModel;
     bool acceptDataErase{};
+    bool acceptBootloaderDowngrade{};
     bool reboot{true};
     std::vector<std::uint8_t> reviewedPit;
 };
@@ -63,6 +65,10 @@ struct Agent::Impl : std::enable_shared_from_this<Agent::Impl> {
     bool hotplugTried{};
     transport::UsbEnumeration lastEnumeration;
     bool shuttingDown{};
+    std::chrono::steady_clock::time_point lastJournalWrite{};
+
+    void persistJobSnapshot(const JobSnapshot& snapshot);
+    void recoverJournal();
 
     void handle(xpc_object_t message);
     void drop(xpc_connection_t peer);
@@ -78,6 +84,31 @@ struct Agent::Impl : std::enable_shared_from_this<Agent::Impl> {
         }
     }
 };
+
+void Agent::Impl::persistJobSnapshot(const JobSnapshot& snapshot)
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (snapshot.running &&
+        now - lastJournalWrite < std::chrono::milliseconds(500)) {
+        return;
+    }
+    lastJournalWrite = now;
+    journalPersist(snapshot);
+}
+
+void Agent::Impl::recoverJournal()
+{
+    auto loaded = journalRecover();
+    if (!loaded) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex);
+    job = std::make_shared<Job>();
+    job->snapshot = std::move(*loaded);
+    if (job->snapshot.id >= nextJobId) {
+        nextJobId = job->snapshot.id + 1;
+    }
+}
 
 Xpc Agent::Impl::makeEvent(const char* name, std::uint64_t jobId)
 {
@@ -166,6 +197,12 @@ void Agent::Impl::run(std::shared_ptr<Job> j, FlashRequest request)
             auto event = makeEvent("progress", id);
             xpc_dictionary_set_value(event.get(), "progress", encodeProgress(progress).get());
             broadcast(event);
+            JobSnapshot copy;
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                copy = j->snapshot;
+            }
+            persistJobSnapshot(copy);
         }
     };
     observer.onPlan = [this, j, id](const planner::FlashPlan& plan) {
@@ -192,7 +229,8 @@ void Agent::Impl::run(std::shared_ptr<Job> j, FlashRequest request)
         } else {
             flash::Request flashRequest;
             flashRequest.packages = std::move(*packages);
-            flashRequest.confirmation = {request.typedModel, request.acceptDataErase};
+            flashRequest.confirmation = {request.typedModel, request.acceptDataErase,
+                                         request.acceptBootloaderDowngrade};
             bool ok = true;
             if (!request.reviewedPit.empty()) {
                 auto table = pit::parse(request.reviewedPit.data(), request.reviewedPit.size());
@@ -264,6 +302,7 @@ void Agent::Impl::run(std::shared_ptr<Job> j, FlashRequest request)
         j->snapshot.result = result;
         j->snapshot.running = false;
     }
+    journalClear();
     auto event = makeEvent("finished", id);
     xpc_dictionary_set_value(event.get(), "result", encodeResult(result).get());
     broadcast(event);
@@ -294,6 +333,7 @@ Xpc Agent::Impl::start(xpc_object_t message)
         }
         request.typedModel = getString(message, "model");
         request.acceptDataErase = getBool(message, "acceptErase");
+        request.acceptBootloaderDowngrade = getBool(message, "acceptBootloaderDowngrade");
         request.reboot = getBool(message, "reboot");
         request.reviewedPit = getData(message, "reviewedPit");
         if (request.typedModel.empty()) {
@@ -366,6 +406,10 @@ Xpc Agent::Impl::start(xpc_object_t message)
         worker = std::thread([self = shared_from_this(), j, request = std::move(request)]() mutable {
             self->run(j, std::move(request));
         });
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        persistJobSnapshot(j->snapshot);
     }
     auto started = makeEvent("started", j->snapshot.id);
     xpc_dictionary_set_string(started.get(), "kind", toString(*kind));
@@ -503,6 +547,7 @@ Agent::Agent(std::shared_ptr<transport::UsbTransport> transport, AgentOptions op
 {
     impl_->transport = std::move(transport);
     impl_->options = options;
+    impl_->recoverJournal();
 }
 
 Agent::~Agent()

@@ -47,6 +47,7 @@ private struct ActionBar<Actions: View>: View {
             .padding(.horizontal, 20).padding(.vertical, 12)
         }
         .background(.bar)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -94,6 +95,17 @@ private struct SetupStep: View {
             }
 
             Section {
+                HStack {
+                    Menu("Presets") {
+                        Button("Typical release (clear USERDATA)") { model.applyPresetKeepUserData() }
+                            .help("Keep BL, AP, CP, and CSC. Put HOME_CSC in the CSC row to avoid wiping data.")
+                        Button("BL + AP + CP only (external PIT)") { model.applyPresetBlApCpOnly() }
+                            .help("Clears CSC and USERDATA. Open a matching PIT on Review.")
+                        Button("AP only (recovery)") { model.applyPresetAPOnly() }
+                            .help("Clears every other slot. You still need a PIT file on Review when there is no CSC.")
+                    }
+                    Spacer()
+                }
                 ForEach(Slot.allCases) { slot in SlotRow(slot: slot) }
                 if let progress = model.loadingProgress {
                     LabeledContent {
@@ -103,7 +115,8 @@ private struct SetupStep: View {
                             Text(progress.entry.isEmpty ? "Verifying…" : "Verifying \(progress.entry)")
                                 .lineLimit(1)
                             ProgressView(value: progress.fileFraction)
-                                .accessibilityLabel("Verifying \(progress.entry)")
+                                .accessibilityLabel(L10n.verifyProgress)
+                                .accessibilityValue(progress.entry)
                         }
                     }
                 }
@@ -131,10 +144,11 @@ private struct SetupStep: View {
         .formStyle(.grouped)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ActionBar(hint: next) {
-                Button("Continue") { model.step = .review }
+                Button(L10n.continueLabel) { model.step = .review }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.reachable(.review))
+                    .help(L10n.continueToReview)
             }
         }
     }
@@ -207,30 +221,6 @@ private struct PackageRow: View {
     }
 }
 
-private struct DownloadModeGuide: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Power the phone off, then hold these keys while connecting it, and press Volume Up at the warning screen:")
-            Label("Home button: Volume Down + Home + Power", systemImage: "circle.fill")
-            Label("Bixby: Volume Down + Bixby + Power", systemImage: "circle.fill")
-            Label("No Home or Bixby button: Volume Up + Volume Down while plugging in the cable", systemImage: "circle.fill")
-            Text("Use a data cable plugged directly into this Mac, and quit other USB tools.")
-                .foregroundStyle(.secondary)
-        }
-        .font(.callout)
-        .labelStyle(BulletLabelStyle())
-    }
-}
-
-private struct BulletLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("•")
-            configuration.title
-        }
-    }
-}
-
 // MARK: Review & Confirm
 
 /// What must be true before the Flash button is enabled.
@@ -243,6 +233,7 @@ private struct BulletLabelStyle: LabelStyle {
     var ready: Bool {
         (modelKnown || model.acknowledgeUnknownModel)
             && (!plan.requiresAcknowledgement || model.acceptDataErase)
+            && (!plan.requiresBootloaderDowngradeAck || model.acceptBootloaderDowngrade)
             && model.canStartJob && !model.handshakeDone
     }
     var storedBytes: UInt64 { plan.files.reduce(0) { $0 + $1.size } }
@@ -251,6 +242,7 @@ private struct BulletLabelStyle: LabelStyle {
 private struct ReviewStep: View {
     @EnvironmentObject private var model: AppModel
     @State private var confirmFlash = false
+    @State private var copiedPlan = false
 
     private var state: ConfirmState? { model.plan.map { ConfirmState(model: model, plan: $0) } }
     private var canConfirm: Bool { (model.plan?.flashable ?? false) && model.devicePit != nil }
@@ -270,12 +262,29 @@ private struct ReviewStep: View {
                 Text("Every image is mapped to a partition without talking to the phone. At flash time the phone's own PIT is checked, and nothing is sent if it differs. Anything ambiguous is refused.")
             }
 
+            if let diff = model.pitDiff, model.packages != nil {
+                Section("PIT diff (reviewed vs firmware)") {
+                    PitDiffView(comparison: diff)
+                }
+            }
+
             if let error = model.reviewError {
                 Section { RecoveryCard(error: error, rebooted: false) }
             }
 
             if let plan = model.plan, let state {
-                Section("Plan") { PlanView(plan: plan) }
+                Section("Plan") {
+                    PlanView(plan: plan)
+                    HStack {
+                        Button("Copy Plan Text") { copyPlan(plan) }
+                        Button("Export Plan JSON…") {
+                            let name = model.pitSource.isEmpty ? "flash-plan.json"
+                                : "\((model.pitSource as NSString).deletingPathExtension).plan.json"
+                            model.savePlanJSON(plan, pitName: model.pitSource, defaultFileName: name)
+                        }
+                        if copiedPlan { Text("Copied").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
                 if canConfirm {
                     Section("You are about to flash") {
                         LabeledContent("Phone", value: model.selectedDevice?.label ?? "?")
@@ -294,9 +303,15 @@ private struct ReviewStep: View {
                         }
                         if plan.requiresAcknowledgement {
                             Toggle("I understand this erases all data on the phone", isOn: $model.acceptDataErase)
-                            ForEach(plan.warnings.filter(\.requiresAcknowledgement)) { w in
-                                Text(w.message).font(.callout).foregroundStyle(.orange)
-                            }
+                        }
+                        if plan.requiresBootloaderDowngradeAck {
+                            Toggle("I understand this may downgrade the bootloader", isOn: $model.acceptBootloaderDowngrade)
+                        }
+                        ForEach(plan.warnings.filter(\.requiresAcknowledgement)) { w in
+                            Text(w.message).font(.callout).foregroundStyle(.orange)
+                        }
+                        ForEach(plan.warnings.filter { !$0.requiresAcknowledgement }) { w in
+                            Text(w.message).font(.callout).foregroundStyle(.secondary)
                         }
                         Toggle("Restart the phone when finished", isOn: $model.rebootWhenDone)
                     }
@@ -310,7 +325,7 @@ private struct ReviewStep: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ActionBar(hint: model.plan?.flashable == false ? "The plan was refused. Nothing will be flashed." : "") {
-                Button("Back") { model.step = .setup }
+                Button(L10n.back) { model.step = .setup }
                 if canConfirm, let plan = model.plan, let state {
                     // Deliberately no keyboard shortcut.
                     Button(state.erases ? "Flash…" : "Flash") {
@@ -331,11 +346,19 @@ private struct ReviewStep: View {
         }
     }
 
+    private func copyPlan(_ plan: Plan) {
+        let pit = model.pitSource.isEmpty ? "review" : model.pitSource
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(AppModel.planExportText(plan, pitName: pit), forType: .string)
+        copiedPlan = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copiedPlan = false }
+    }
+
     private func openPit() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.message = "Choose a PIT file for this phone (for example a PIT Backup from Tools)"
+        panel.message = "Choose a PIT file for this phone (for example from Device › PIT Backup)"
         if panel.runModal() == .OK, let url = panel.url { model.reviewFromFile(url) }
     }
 }
@@ -373,6 +396,7 @@ private struct FlashProgressStep: View {
                 LabeledContent("Progress", value: "\(Int(job.progress.fraction * 100))% · \(formatBytes(job.progress.totalDone)) of \(formatBytes(job.progress.total))")
                     .monospacedDigit()
                 ProgressView(value: job.progress.fraction)
+                .accessibilityLabel(L10n.flashProgress)
                 .accessibilityValue("\(Int(job.progress.fraction * 100)) percent")
                 if !job.progress.entry.isEmpty, job.running {
                     ProgressView(value: job.progress.fileFraction) {

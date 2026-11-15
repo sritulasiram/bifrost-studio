@@ -3,7 +3,7 @@ set(BIFROST_TEAM_ID "" CACHE STRING
     "Developer ID team identifier; empty = development build (identifier-only peer checks)")
 set(BIFROST_AGENT_LABEL "local.bifrost.agent" CACHE STRING "Agent launchd label / Mach service")
 set(BIFROST_USBD_LABEL "local.bifrost.usbd" CACHE STRING "USB helper launchd label / Mach service")
-set(BIFROST_CLI_IDENTIFIER "local.bifrost.cli" CACHE STRING "CLI code-signing identifier")
+set(BIFROST_CLI_IDENTIFIER "studio.bifrost.cli" CACHE STRING "CLI code-signing identifier")
 if(NOT BIFROST_TEAM_ID)
     message(STATUS "Service peer checks: development (signing identifier only)")
 endif()
@@ -19,6 +19,7 @@ add_library(BifrostService STATIC
     src/remote_transport.cpp
     src/agent.cpp
     src/agent_client.cpp
+    src/journal.cpp
 )
 target_include_directories(BifrostService PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_BINARY_DIR}/generated")

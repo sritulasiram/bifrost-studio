@@ -4,6 +4,8 @@ What has actually been observed on real hardware. Anything not listed here is UN
 
 Phones tested: SM-N920I (Galaxy Note 5, Exynos 7420, UFS; the maintainer's dedicated test phone, firmware N920IDVU5CVG2, and the source of most results below), SM-N950F, and SM-N915G (tested by the owner; details not yet recorded here, so treat its results as UNVERIFIED until they are). The SM-N986U1 is currently in testing.
 
+**Before another N986U1 session:** use a **fresh** Download Mode entry (full power-off entry; no probe in that session yet). Follow [status.md](status.md#sm-n986u1-checklist-maintainer).
+
 | What | Result |
 |---|---|
 | USB identity | `04e8:685d` in Download Mode, high speed. macOS binds `AppleUSBACMData` to the Odin interface, so it must be detached, which needs root. In Android the phone is `04e8:6860` with 2 configurations. |

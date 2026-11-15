@@ -13,6 +13,23 @@ bool isDownloadModeProductId(std::uint16_t productId) noexcept
     return productId == 0x6601 || productId == 0x685D || productId == 0x68C3;
 }
 
+bool isSamsungAndroidProductId(std::uint16_t productId) noexcept
+{
+    return productId == 0x6860 || productId == 0x6863 || productId == 0x6864;
+}
+
+bool shouldProbeSamsungConfiguration(std::uint16_t productId,
+                                     std::uint8_t numConfigurations) noexcept
+{
+    if (isDownloadModeProductId(productId)) {
+        return true;
+    }
+    if (isSamsungAndroidProductId(productId)) {
+        return false;
+    }
+    return numConfigurations == 1;
+}
+
 std::optional<OdinInterface> findOdinInterface(
     const std::vector<AlternateSetting>& alternates)
 {

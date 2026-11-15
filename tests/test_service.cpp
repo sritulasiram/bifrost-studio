@@ -1,6 +1,7 @@
 // Background agent and USB helper over real XPC (anonymous endpoints, in
 // process): client -> agent -> RemoteTransport -> UsbService -> simulator.
 #include "bifrost/service/agent.hpp"
+#include "bifrost/service/journal.hpp"
 #include "bifrost/service/agent_client.hpp"
 #include "bifrost/service/listener.hpp"
 #include "bifrost/service/remote_transport.hpp"
@@ -13,6 +14,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -228,6 +230,7 @@ bool waitUntil(const std::function<bool()>& condition)
 
 int main()
 {
+    journalClear();
     test::TempDir dir;
     const auto small = makeFirmware(dir, "SMALL", 2 * 1024 * 1024 + 5);
     const auto large = makeFirmware(dir, "LARGE", 31 * 1024 * 1024 + 7);
@@ -327,6 +330,24 @@ int main()
         CHECK(changed.wait_for(lock, kWait, [&] { return count > 0; }));
         lock.unlock();
         remote->stopHotplug();
+    }
+
+    // F-3: hot-plug events reach subscribed agent clients (helper -> agent -> UI path).
+    {
+        Chain chain;
+        Events events;
+        auto client = chain.client(events.handler());
+        CHECK(client && client->subscribe());
+        auto before = client->devices();
+        CHECK(before && before->devices.size() == 1);
+        chain.simTransport->setAttached(false);
+        CHECK(events.waitFor(AgentEvent::Kind::devicesChanged));
+        auto detached = client->devices();
+        CHECK(detached && detached->devices.empty());
+        chain.simTransport->setAttached(true);
+        CHECK(events.waitFor(AgentEvent::Kind::devicesChanged));
+        auto again = client->devices();
+        CHECK(again && again->devices.size() == 1);
     }
 
     // A helper that fails its code-signing requirement is refused.
@@ -538,6 +559,35 @@ int main()
               (*status)->result->error->code == ErrorCode::cancelled);
         auto after = client->startProbe(sim::Transport::identity());
         CHECK(!after && after.error().code == ErrorCode::serviceUnavailable);
+    }
+
+    // R-4: a crash journal is exposed as a finished job on the next agent start.
+    {
+        class TempHome {
+        public:
+            TempHome() { path_ = std::filesystem::temp_directory_path() / "bifrost-svc-journal"; std::filesystem::create_directories(path_); setenv("HOME", path_.c_str(), 1); }
+            ~TempHome() { std::error_code e; std::filesystem::remove_all(path_, e); unsetenv("HOME"); }
+        private:
+            std::filesystem::path path_;
+        };
+        TempHome home;
+        JobSnapshot crashed;
+        crashed.id = 55;
+        crashed.kind = JobKind::flash;
+        crashed.running = true;
+        crashed.progress.phase = flash::Phase::transferring;
+        crashed.progress.totalDone = 100;
+        crashed.progress.total = 1000;
+        journalPersist(crashed);
+        Chain chain;
+        auto client = chain.client();
+        CHECK(client);
+        auto status = client->status();
+        CHECK(status && status->has_value());
+        CHECK((*status)->id == 55 && !(*status)->running);
+        CHECK((*status)->result && (*status)->result->error);
+        CHECK((*status)->result->error->code == ErrorCode::serviceUnavailable);
+        journalClear();
     }
 
     // An agent that fails the client's requirement is refused.

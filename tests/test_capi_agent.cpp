@@ -2,6 +2,7 @@
 // C API -> AgentClient -> Agent -> RemoteTransport -> UsbService -> simulator.
 #include "bifrost/bifrost.h"
 #include "bifrost/service/agent.hpp"
+#include "bifrost/service/journal.hpp"
 #include "bifrost/service/listener.hpp"
 #include "bifrost/service/remote_transport.hpp"
 #include "bifrost/service/usb_service.hpp"
@@ -87,6 +88,7 @@ bool saw(Recorder& r, int32_t kind)
 
 int main()
 {
+    journalClear();
     test::TempDir dir;
     Bytes boot(5000, 7);
     Bytes system(1500000);

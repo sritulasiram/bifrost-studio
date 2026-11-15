@@ -8,9 +8,9 @@ enum FlashStep: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .setup: return "Setup"
-        case .review: return "Review & Confirm"
-        case .flash: return "Flash"
+        case .setup: return L10n.setup
+        case .review: return L10n.review
+        case .flash: return L10n.flashStep
         }
     }
 }
@@ -21,6 +21,7 @@ enum Prefs {
     static let showGuide = "showDownloadGuide"
     static let showHandshake = "showHandshakeOverride"
     static let historyLimit = "historyLimit"
+    static let welcomeSeen = "welcomeSeen"
 
     static var rebootDefault: Bool { UserDefaults.standard.object(forKey: reboot) as? Bool ?? true }
     /// 0 keeps every entry.
@@ -107,7 +108,20 @@ final class AppModel: ObservableObject {
     @Published var pitSource = ""
     @Published var plan: Plan?
     @Published var reviewError: BifrostError?
+    /// Offline diff between the reviewed PIT and the firmware's embedded PIT (Review only).
+    @Published var pitDiff: PitComparison?
+    /// Tools › Inspect / PIT backup compare (separate from Review).
+    @Published var toolsPitDiff: PitComparison?
+    @Published var toolsDevicePage: ToolsDevicePage = .probe
+    @Published var toolsAndroidPage: ToolsAndroidPage = .adb
+    @Published var toolsInspectPackages: LoadedPackages?
+    @Published var toolsInspectError: String?
+    @Published var toolsInspectLoading = false
+    /// PIT bytes shown in Inspect (from backup, file, or firmware).
+    @Published var inspectPitData: Data?
+    @Published var inspectPitName = ""
     @Published var acceptDataErase = false
+    @Published var acceptBootloaderDowngrade = false
     @Published var acknowledgeUnknownModel = false
     @Published var rebootWhenDone = Prefs.rebootDefault
 
@@ -121,6 +135,7 @@ final class AppModel: ObservableObject {
     @Published var section: SidebarItem = .flash
     @Published var selectedHistoryID: UUID?
     @Published var showServiceSetup = false
+    @Published var showWelcome = false
     @Published var lastBackup: URL?
     /// The last device job timed out before sending data: the handshake guess may be wrong.
     @Published var handshakeSuspect = false
@@ -129,20 +144,34 @@ final class AppModel: ObservableObject {
     @Published var needsRestart = false
 
     private var agent: AgentConnection?
+    private var bootstrapped = false
     private var connectionGeneration = 0
     private var refreshWork: DispatchWorkItem?
     private var retryTimer: Timer?
     @Published var serviceStatus = BackgroundServices.summary()
     @Published var serviceMessage: String?
-    private let local = LocalCore()
+    let local = LocalCore()
     private var absentSince: Date?
     private var verifyGeneration = 0
     private var verifyDebounce: DispatchWorkItem?
-    private let work = DispatchQueue(label: "bifrost.app.work", qos: .userInitiated)
+    let work = DispatchQueue(label: "bifrost.app.work", qos: .userInitiated)
 
     init() {
         loadHistory()
+        showWelcome = !UserDefaults.standard.bool(forKey: Prefs.welcomeSeen)
+    }
+
+    /// Agent XPC is synchronous; run after the first frame so LaunchServices
+    /// launch is not blocked on a missing or slow bifrost-agent.
+    func bootstrap() {
+        guard !bootstrapped else { return }
+        bootstrapped = true
         connect()
+    }
+
+    func dismissWelcome() {
+        UserDefaults.standard.set(true, forKey: Prefs.welcomeSeen)
+        showWelcome = false
     }
 
     // MARK: Agent
@@ -151,24 +180,34 @@ final class AppModel: ObservableObject {
         agentState = .connecting
         connectionGeneration += 1
         let generation = connectionGeneration
-        do {
-            agent = try AgentConnection { [weak self] event in
-                // Ignore events from a connection that failed or was replaced.
-                guard let self, self.connectionGeneration == generation, self.agent != nil else { return }
-                self.handle(event)
+        work.async { [weak self] in
+            let result: Result<AgentConnection, Error> = Result {
+                try AgentConnection { event in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.connectionGeneration == generation else { return }
+                        self.handle(event)
+                    }
+                }
             }
-            agentState = .connected
-            stopRetrying()
-            refreshDevices()
-            reattach()
-        } catch let error as BifrostError {
-            agent = nil
-            agentState = .unavailable(error.message)
-            startRetrying()
-        } catch {
-            agent = nil
-            agentState = .unavailable(error.localizedDescription)
-            startRetrying()
+            DispatchQueue.main.async {
+                guard let self, self.connectionGeneration == generation else { return }
+                switch result {
+                case let .success(connection):
+                    self.agent = connection
+                    self.agentState = .connected
+                    self.stopRetrying()
+                    self.refreshDevices()
+                    self.reattach()
+                case let .failure(error as BifrostError):
+                    self.agent = nil
+                    self.agentState = .unavailable(error.message)
+                    self.startRetrying()
+                case let .failure(error):
+                    self.agent = nil
+                    self.agentState = .unavailable(error.localizedDescription)
+                    self.startRetrying()
+                }
+            }
         }
     }
 
@@ -200,17 +239,34 @@ final class AppModel: ObservableObject {
     func refreshServiceStatus() { serviceStatus = BackgroundServices.summary() }
 
     private func reattach() {
-        guard let agent, let snapshot = try? agent.status(), snapshot.running else { return }
-        var state = JobState(id: snapshot.id, kind: snapshot.kind,
-                             purpose: snapshot.kind == .flash ? .flash : .probe)
+        guard let agent, let snapshot = try? agent.status() else { return }
+        if snapshot.running {
+            applyJobSnapshot(snapshot, running: true)
+            return
+        }
+        if let error = snapshot.result?.error, error.code == BifrostError.serviceUnavailable {
+            applyJobSnapshot(snapshot, running: false)
+            actionError = error
+            section = .flash
+        }
+    }
+
+    private func applyJobSnapshot(_ snapshot: JobSnapshot, running: Bool) {
+        let purpose: JobState.Purpose =
+            snapshot.kind == .flash ? .flash : .probe
+        var state = JobState(id: snapshot.id, kind: snapshot.kind, purpose: purpose)
+        state.running = running
         state.progress = snapshot.progress
         state.plan = snapshot.plan
         state.log = snapshot.log
         state.device = snapshot.device
+        state.result = snapshot.result
         job = state
         if let device = snapshot.device { selectedDevice = device }
-        section = .flash
-        step = .flash
+        if running {
+            section = .flash
+            step = .flash
+        }
     }
 
     func refreshDevices() {
@@ -326,6 +382,7 @@ final class AppModel: ObservableObject {
                 do {
                     try pit.write(to: url, options: .atomic)
                     lastBackup = url
+                    ingestBackedUpPit(pit, label: url.lastPathComponent)
                 } catch {
                     actionError = BifrostError(code: BifrostError.io, message: error.localizedDescription)
                 }
@@ -355,6 +412,7 @@ final class AppModel: ObservableObject {
         reviewError = nil
         plan = nil
         devicePit = nil
+        pitDiff = nil
         pitSource = ""
         switch PitTable.embedded(in: packages) {
         case let .success(found):
@@ -371,6 +429,7 @@ final class AppModel: ObservableObject {
         reviewError = nil
         plan = nil
         devicePit = nil
+        pitDiff = nil
         pitSource = ""
         do {
             let data = try Data(contentsOf: url)
@@ -396,7 +455,8 @@ final class AppModel: ObservableObject {
         guard let pit = devicePit, let plan, plan.flashable, !handshakeDone else { return }
         let request = AgentConnection.FlashRequest(
             device: selectedDevice!, packages: orderedPaths, typedModel: detectedModel.isEmpty ? "UNKNOWN" : detectedModel,
-            acceptDataErase: acceptDataErase, reboot: rebootWhenDone,
+            acceptDataErase: acceptDataErase, acceptBootloaderDowngrade: acceptBootloaderDowngrade,
+            reboot: rebootWhenDone,
             reviewedPit: pit.bytes)
         if start(.flash, kind: .flash, { agent, _ in try agent.startFlash(request) }) {
             step = .flash
@@ -407,6 +467,7 @@ final class AppModel: ObservableObject {
     /// Every acknowledgement apply to one reviewed plan only.
     func resetConfirmation() {
         acceptDataErase = false
+        acceptBootloaderDowngrade = false
         acknowledgeUnknownModel = false
     }
 
@@ -415,6 +476,7 @@ final class AppModel: ObservableObject {
         guard !(job?.running ?? false) else { return }
         job = nil
         devicePit = nil
+        pitDiff = nil
         pitSource = ""
         plan = nil
         reviewError = nil
@@ -489,6 +551,7 @@ final class AppModel: ObservableObject {
         packages = nil
         plan = nil
         devicePit = nil
+        pitDiff = nil
         firmwareError = nil
         resetConfirmation()
         verifyGeneration += 1
@@ -540,96 +603,101 @@ final class AppModel: ObservableObject {
             devicePit = table
             pitSource = source
             self.plan = plan
+            refreshPitDiff()
         case let .failure(error):
             reviewError = error
+            pitDiff = nil
         }
     }
 
-    // MARK: History
-
-    private var historyDirectory: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("Bifrost Studio/History", isDirectory: true)
-    }
-
-    private func record(_ state: JobState) {
-        guard let result = state.result else { return }
-        let entry = HistoryEntry(
-            date: state.startedAt, kind: state.kind,
-            device: state.device?.label ?? "", model: state.plan?.detectedModel ?? "",
-            files: state.plan?.files.map { "\($0.entry) → \($0.partition)" } ?? [],
-            error: result.error, bytesTransferred: result.bytesTransferred,
-            session: result.session, log: Array(state.log.suffix(2000)),
-            duration: Date().timeIntervalSince(state.startedAt),
-            packagePaths: state.packagePaths.isEmpty ? nil : state.packagePaths)
-        history.insert(entry, at: 0)
-        guard let directory = historyDirectory else { return }
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(entry) {
-            try? data.write(to: historyURL(entry))
+    /// Compares the reviewed PIT with the CSC/HOME_CSC embedded PIT when both exist.
+    func refreshPitDiff() {
+        pitDiff = nil
+        guard let table = devicePit, let packages else { return }
+        switch PitTable.embedded(in: packages) {
+        case let .success(found):
+            switch PitComparison.compare(device: table.bytes, firmware: found.bytes) {
+            case let .success(diff): pitDiff = diff
+            case .failure: break
+            }
+        case .failure:
+            break
         }
-        applyRetention()
     }
 
-    func historyURL(_ entry: HistoryEntry) -> URL {
-        (historyDirectory ?? FileManager.default.temporaryDirectory)
-            .appendingPathComponent("\(entry.id.uuidString).json")
+    /// Leaves only AP — for CSC-less recovery you must also open a matching PIT on Review.
+    /// Clears USERDATA; use HOME_CSC in the CSC row to avoid a full CSC wipe.
+    func applyPresetKeepUserData() {
+        paths[.userdata] = nil
+        setPath(nil, for: .userdata)
     }
 
-    var historyFolder: URL? { historyDirectory }
-
-    /// Drops the oldest entries beyond the Settings limit (0 keeps all).
-    func applyRetention() {
-        let limit = Prefs.historyKeep
-        guard limit > 0, history.count > limit else { return }
-        for entry in history[limit...] { try? FileManager.default.removeItem(at: historyURL(entry)) }
-        history = Array(history.prefix(limit))
+    /// BL, AP, and CP only — pair with a PIT file on Review (no CSC slot).
+    func applyPresetBlApCpOnly() {
+        for slot in [Slot.csc, .userdata] { paths[slot] = nil }
+        reverifyAfterPresetMutation()
     }
 
-    func deleteHistory(_ ids: Set<UUID>) {
-        for entry in history where ids.contains(entry.id) {
-            try? FileManager.default.removeItem(at: historyURL(entry))
+    func applyPresetAPOnly() {
+        for slot in Slot.allCases where slot != .ap { paths[slot] = nil }
+        reverifyAfterPresetMutation()
+    }
+
+    /// Drops firmware onto the sidebar: maps file names to slots and opens Flash › Setup.
+    func ingestFirmwareDrop(_ urls: [URL]) {
+        let expanded = Self.expandFirmwarePaths(urls.map(\.path))
+        let firmware = expanded.filter(Self.looksLikeFirmwarePackage)
+        guard !firmware.isEmpty else {
+            actionError = BifrostError(code: BifrostError.invalidArgument,
+                                       message: "Drop Samsung .tar or .tar.md5 firmware files.")
+            return
         }
-        history.removeAll { ids.contains($0.id) }
-        if let selected = selectedHistoryID, ids.contains(selected) { selectedHistoryID = nil }
+        section = .flash
+        step = .setup
+        for path in firmware {
+            setPath(path, for: slotGuess(for: path))
+        }
     }
 
-    func clearHistory() { deleteHistory(Set(history.map(\.id))) }
-
-    func exportJSON(_ entry: HistoryEntry) -> Data? {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return try? encoder.encode(entry)
+    private func reverifyAfterPresetMutation() {
+        packages = nil
+        plan = nil
+        devicePit = nil
+        pitDiff = nil
+        pitSource = ""
+        firmwareError = nil
+        resetConfirmation()
+        verifyGeneration += 1
+        verifyDebounce?.cancel()
+        if loadingProgress != nil { local?.cancelLoading() }
+        guard !orderedPaths.isEmpty else {
+            loadingProgress = nil
+            return
+        }
+        let item = DispatchWorkItem { [weak self] in self?.verifyFirmware() }
+        verifyDebounce = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: item)
     }
 
-    private func loadHistory() {
-        guard let directory = historyDirectory,
-              let files = try? FileManager.default.contentsOfDirectory(at: directory,
-                                                                       includingPropertiesForKeys: nil)
-        else { return }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        history = files.filter { $0.pathExtension == "json" }
-            .compactMap { try? decoder.decode(HistoryEntry.self, from: Data(contentsOf: $0)) }
-            .sorted { $0.date > $1.date }
-        applyRetention()
+    private static func looksLikeFirmwarePackage(_ path: String) -> Bool {
+        let lower = path.lowercased()
+        return lower.hasSuffix(".tar.md5") || lower.hasSuffix(".tar")
     }
 
-    func exportText(_ entry: HistoryEntry) -> String {
-        var lines = ["Bifrost Studio \(entry.kind.title) — \(entry.date)",
-                     "Device: \(entry.device)", "Model: \(entry.model)",
-                     "Result: \(entry.error.map { "FAILED (\($0.codeName), \($0.dataState)): \($0.message)" } ?? "OK")",
-                     String(format: "Session ACK: 0x%x, protocol %u", entry.session.ack, entry.session.protocolVersion),
-                     "Bytes transferred: \(entry.bytesTransferred)",
-                     "Duration: \(entry.duration.map { String(format: "%.0f s", $0) } ?? "unknown")", "", "Files:"]
-        lines += entry.files.map { "  \($0)" }
-        lines += ["", "Log:"]
-        lines += entry.log.map { "  \($0.message)" }
-        return lines.joined(separator: "\n")
+    private static func expandFirmwarePaths(_ paths: [String]) -> [String] {
+        var files: [String] = []
+        let fm = FileManager.default
+        for path in paths {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: path, isDirectory: &isDir) else { continue }
+            if isDir.boolValue {
+                guard let names = try? fm.contentsOfDirectory(atPath: path) else { continue }
+                files += names.map { (path as NSString).appendingPathComponent($0) }
+            } else {
+                files.append(path)
+            }
+        }
+        return files
     }
 }
 

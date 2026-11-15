@@ -80,7 +80,8 @@ final class AgentConnection {
         for i in 0..<bf_device_list_count(list) {
             var info = bf_device_info()
             if bf_device_list_get(list, i, &info) {
-                devices.append(Device(id: DeviceID(info.id), inDownloadMode: info.has_odin_interface))
+                devices.append(Device(id: DeviceID(info.id), inDownloadMode: info.has_odin_interface,
+                                    unlistedProductID: info.unlisted_product_id))
             }
         }
         return devices
@@ -107,6 +108,7 @@ final class AgentConnection {
         var packages: [(Slot, String)]
         var typedModel: String
         var acceptDataErase: Bool
+        var acceptBootloaderDowngrade: Bool
         var reboot: Bool
         var reviewedPit: Data?
     }
@@ -130,6 +132,7 @@ final class AgentConnection {
                 c.package_count = slotBuffer.count
                 c.typed_model = UnsafePointer(model)
                 c.accept_data_erase = request.acceptDataErase
+                c.accept_bootloader_downgrade = request.acceptBootloaderDowngrade
                 c.reboot = request.reboot
                 c.reviewed_pit = pit.isEmpty ? nil : pitBytes.bindMemory(to: UInt8.self).baseAddress
                 c.reviewed_pit_size = pit.count

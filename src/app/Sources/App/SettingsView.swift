@@ -43,7 +43,9 @@ private struct ServicesSettings: View {
     var body: some View {
         Form {
             Section("Background services") {
-                Text("The flash agent runs flashes so they continue if the window closes or the app quits. The USB helper runs as root and only claims the Samsung USB interface and moves data for the agent; it never opens your files.")
+                Text("The flash agent runs flashes so they continue if the window closes or the app quits. On logout, launchd allows up to 300 seconds for an in-progress flash to stop safely at the next sequence boundary.")
+                    .font(.callout).foregroundStyle(.secondary)
+                Text("The USB helper runs as root and only claims the Samsung USB interface and moves data for the agent; it never opens your files.")
                     .font(.callout).foregroundStyle(.secondary)
                 ServiceControlsView()
             }
@@ -143,7 +145,7 @@ private struct AboutSettings: View {
         Form {
             Section {
                 LabeledContent("Bifrost Studio", value: version)
-                Text("Hardware-tested only on the Galaxy Note 5 (SM-N920I) so far. Other models are unverified.")
+                Text("Hardware-tested on SM-N920I, SM-N950F and others; see the README for current scope. Android tools remain UNVERIFIED until tested on a phone.")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Copy Diagnostics") {
@@ -152,6 +154,7 @@ private struct AboutSettings: View {
                         copied = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
                     }
+                    Button("Export Diagnostics Bundle…") { exportBundle() }
                     if copied { Text("Copied").font(.caption).foregroundStyle(.secondary) }
                 }
             }
@@ -165,6 +168,19 @@ private struct AboutSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func exportBundle() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.zip]
+        panel.nameFieldStringValue = "BifrostStudio-diagnostics.zip"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try Diagnostics.exportBundle(model, to: url)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.runModal()
+        }
     }
 }
 
@@ -183,13 +199,46 @@ enum Diagnostics {
             "macOS \(ProcessInfo.processInfo.operatingSystemVersionString) · \(arch)",
             "Services: \(BackgroundServices.summary())",
             "Agent connection: \(describe(model.agentState))",
-            "Phones seen: \(model.devices.map { "\($0.id.label)\($0.inDownloadMode ? " [Download Mode]" : "")" }.joined(separator: "; "))",
+            "Phones seen: \(phoneSummary(model.devices))",
             "Assumes handshake done: \(model.handshakeDone)",
         ]
         if let last = model.history.first {
             lines.append("Last job: \(last.kind.title) \(last.succeeded ? "OK" : "FAILED") at \(last.date)")
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// Writes diagnostics.txt and recent History JSON into a zip (no firmware paths).
+    static func exportBundle(_ model: AppModel, to url: URL) throws {
+        let fm = FileManager.default
+        let staging = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: staging) }
+        try text(model).write(to: staging.appendingPathComponent("diagnostics.txt"),
+                              atomically: true, encoding: .utf8)
+        if let history = model.historyFolder, fm.fileExists(atPath: history.path) {
+            try fm.copyItem(at: history, to: staging.appendingPathComponent("history", isDirectory: true))
+        }
+        if fm.fileExists(atPath: url.path) { try fm.removeItem(at: url) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", staging.path, url.path]
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw NSError(domain: "BifrostStudio", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Could not create the diagnostics zip"])
+        }
+    }
+
+    private static func phoneSummary(_ devices: [Device]) -> String {
+        devices.map { dev in
+            var tag = dev.id.label
+            if dev.inDownloadMode {
+                tag += dev.unlistedProductID ? " [Download Mode, unlisted PID]" : " [Download Mode]"
+            }
+            return tag
+        }.joined(separator: "; ")
     }
 
     private static func describe(_ state: AgentState) -> String {

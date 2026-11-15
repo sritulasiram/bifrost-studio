@@ -530,7 +530,8 @@ int flashCommand(const Arguments& arguments)
     }
     flash::Request request;
     request.packages = std::move(*packages);
-    request.confirmation = {model, hasFlag(arguments, "--accept-data-erase")};
+    request.confirmation = {model, hasFlag(arguments, "--accept-data-erase"),
+                            hasFlag(arguments, "--accept-bootloader-downgrade")};
     if (const auto reviewPit = valueOr(arguments, "--review-pit"); !reviewPit.empty()) {
         auto table = loadPitFile(reviewPit);
         if (!table) {

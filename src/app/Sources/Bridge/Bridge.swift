@@ -64,6 +64,7 @@ struct BifrostError: Error, Codable, Hashable {
     static let bootloaderRejected = cInt(BF_E_BOOTLOADER_REJECTED)
     static let illegalState = cInt(BF_E_ILLEGAL_STATE)
     static let pitInvalid = cInt(BF_E_PIT_INVALID)
+    static let invalidArgument = cInt(BF_E_INVALID_ARGUMENT)
     static let io: Int32 = 2 // BF_E_IO
 }
 
@@ -135,6 +136,7 @@ struct DeviceID: Hashable, Codable {
 struct Device: Identifiable, Hashable {
     var id: DeviceID
     var inDownloadMode: Bool
+    var unlistedProductID: Bool
 }
 
 struct JobProgress: Codable, Equatable {
@@ -226,6 +228,10 @@ struct Plan: Codable, Equatable {
             refusals.append(string(bf_plan_refusal(plan, i)))
         }
     }
+
+    var requiresBootloaderDowngradeAck: Bool {
+        warnings.contains { $0.requiresAcknowledgement && $0.message.contains("downgrading the bootloader") }
+    }
 }
 
 struct SessionInfo: Codable, Hashable {
@@ -315,6 +321,7 @@ struct PackageInfo: Identifiable, Hashable {
     var build: String
     var model: String
     var cscCode: String
+    var bootloaderRevision: Int32 = -1
     var entries: [ArchiveEntry]
 }
 
@@ -341,7 +348,8 @@ final class LoadedPackages: @unchecked Sendable {
                                      checksumPresent: p.checksum_present, checksumValid: p.checksum_valid,
                                      kind: PackageKind(rawValue: p.kind) ?? .unknown,
                                      build: string(p.build), model: string(p.model),
-                                     cscCode: string(p.csc_code), entries: entries))
+                                     cscCode: string(p.csc_code),
+                                     bootloaderRevision: p.bootloader_revision, entries: entries))
         }
         self.infos = infos
     }
@@ -447,6 +455,40 @@ struct PitTable {
             bf_plan_free(offline)
         }
         return .success((PitTable(entries: entries, bytes: data), plan))
+    }
+}
+
+struct PitComparison: Equatable {
+    var layoutDifferences: [String]
+    var sizeDifferences: [String]
+    var sameLayout: Bool { layoutDifferences.isEmpty }
+
+    /// Offline diff (no device USB). Either side can be a saved backup or the firmware PIT.
+    static func compare(device: Data, firmware: Data) -> Result<PitComparison, BifrostError> {
+        var error = bf_error()
+        let devicePit: OpaquePointer? = device.withUnsafeBytes { raw in
+            bf_pit_parse(raw.bindMemory(to: UInt8.self).baseAddress, device.count, &error)
+        }
+        guard let devicePit else { return .failure(BifrostError(error)) }
+        defer { bf_pit_free(devicePit) }
+        let firmwarePit: OpaquePointer? = firmware.withUnsafeBytes { raw in
+            bf_pit_parse(raw.bindMemory(to: UInt8.self).baseAddress, firmware.count, &error)
+        }
+        guard let firmwarePit else { return .failure(BifrostError(error)) }
+        defer { bf_pit_free(firmwarePit) }
+        guard let comparison = bf_pit_compare(devicePit, firmwarePit) else {
+            return .failure(BifrostError(code: BifrostError.invalidArgument, message: "Could not compare PIT tables"))
+        }
+        defer { bf_pit_comparison_free(comparison) }
+        var layout: [String] = []
+        for i in 0..<bf_pit_comparison_layout_count(comparison) {
+            if let line = bf_pit_comparison_layout(comparison, i) { layout.append(string(line)) }
+        }
+        var sizes: [String] = []
+        for i in 0..<bf_pit_comparison_size_count(comparison) {
+            if let line = bf_pit_comparison_size(comparison, i) { sizes.append(string(line)) }
+        }
+        return .success(PitComparison(layoutDifferences: layout, sizeDifferences: sizes))
     }
 }
 

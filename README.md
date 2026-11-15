@@ -6,33 +6,39 @@
 
 <p align="center"><strong>Samsung firmware flasher for Mac: a native Odin alternative for macOS.</strong></p>
 
-Bifrost Studio flashes Samsung Galaxy firmware over USB in Download Mode, the way Odin does, but natively on macOS. It takes the same `.tar.md5` packages (BL, AP, CP, CSC), so you need no Windows, Wine, Java or Heimdall build.
+<p align="center">
+  <a href="https://github.com/sritulasiram/bifrost-studio/releases/latest">Latest release</a>
+  ·
+  <a href="CHANGELOG.md">1.1.0</a>
+</p>
+
+Bifrost Studio flashes Samsung Galaxy firmware over USB in Download Mode, the way Odin does, but natively on macOS. It takes the same `.tar.md5` packages (BL, AP, CP, CSC, HOME_CSC), so you need no Windows, Wine, Java or Heimdall build.
 
 > **Warning.** Flashing can leave a phone unbootable or erase its data. Use it only on a phone you are prepared to recover, with firmware for that exact model. Not affiliated with Samsung.
 
-> **Beta.** Tested on three Samsung phones so far (SM-N915G, SM-N920I, SM-N950F), with the SM-N986U1 in testing, and the DMG is not yet notarized (see [Supported devices](#supported-devices)). If something goes wrong, [open an issue](https://github.com/sritulasiram/bifrost-studio/issues) with the phone model, the firmware build and the log from History > Export > Copy for Bug Report.
+> **Beta.** Version **1.1.0** is tested on **SM-N915G**, **SM-N920I**, and **SM-N950F**; **SM-N986U1** is still blocked. Release builds are **ad-hoc signed** (not Apple-notarized yet). If something goes wrong, [open an issue](https://github.com/sritulasiram/bifrost-studio/issues) with the phone model, firmware build, and the log from **History › Export › Copy for Bug Report**.
 
-![Bifrost Studio, Flash setup screen](docs/images/flash-flow.png)
+![Bifrost Studio: sidebar workspaces and Flash setup (step 1 of 3)](docs/images/flash-setup.png)
 
 ## Features
 
-- **Fail safe.** Everything is checked before any data leaves the Mac, and anything ambiguous is refused. There is no way to re-partition, erase NAND or wipe user data.
-- **Plan before you flash.** See which image goes to which partition, offline, from the firmware's PIT.
+- **Fail safe.** Images are verified and planned before any byte is sent; ambiguous mappings are refused. No re-partition, NAND erase-all, modem type 1, or hidden overrides.
+- **Plan before you flash.** See which image goes to which partition offline, from the firmware's PIT or a saved PIT file.
 - **Verified inputs.** MD5 check of every `.tar.md5`, and every LZ4 image decoded once before the phone is touched.
-- **Explicit confirmation.** The model is read from the firmware, and any data erase needs a separate acknowledgement.
-- **Background flashing.** A flash keeps running if you close the window.
-- **Honest failures.** Every error says whether the phone received no data, some or all of it.
-- **Extras.** Probe, PIT backup, firmware inspector, searchable job history and a command-line tool. Unreleased and untested on hardware: reboot a phone to Download Mode with a bundled `adb`, and prepare a TWRP flash.
+- **Explicit confirmation.** The model must match the firmware; full **CSC** or **USERDATA** slots require a separate data-erase acknowledgement (use **HOME_CSC** to keep data when appropriate).
+- **Background flashing.** A flash keeps running if you quit the window; reconnect via **History** or the agent.
+- **Honest failures.** Every error reports whether the phone received no data, partial data, or a complete write.
+- **Extras.** Sidebar **Inspect**, **History**, **Device** (probe, PIT backup), **Android** (bundled `adb`/fastboot, TWRP prep), CLI, and searchable job history. Android helpers are UNVERIFIED on hardware.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    A["1 Setup<br/>pick phone, drop firmware"] --> B["2 Review<br/>offline plan, no phone session"] --> C["3 Confirm<br/>accept erase"] --> D["4 Flash<br/>one Odin session"]
-    D --> E[(History)]
+    A["1 Setup<br/>phone + firmware"] --> B["2 Review & Confirm<br/>offline plan + acks"] --> C["3 Flash<br/>one Odin session"]
+    C --> D[(History)]
 ```
 
-A flash must be the **first Odin session after the phone enters Download Mode**; it never resumes. Restart into Download Mode after a probe or PIT backup. Details: [architecture](docs/architecture.md) and [protocol](docs/protocol.md).
+A flash must be the **first Odin session after the phone enters Download Mode**; the app does not resume a flash mid-session. Re-enter Download Mode after **Device** probe or PIT backup. Details: [architecture](docs/architecture.md) and [protocol](docs/protocol.md).
 
 ## Supported devices
 
@@ -41,64 +47,70 @@ A flash must be the **first Odin session after the phone enters Download Mode**;
 | Tested on hardware | **SM-N920I (Galaxy Note 5):** full flash succeeded on 2026-11-08 (BL + AP + CP + full CSC, about 4.9 GB in about 2.5 minutes). |
 | | **SM-N950F (Galaxy Note 8):** full flash succeeded on 2026-11-09 (about 6.6 GB in about 200 seconds). |
 | | **SM-N915G (Galaxy Note Edge):** tested. |
-| In testing | **SM-N986U1 (Galaxy Note 20 Ultra 5G):** not working yet. |
-| Intended | Samsung phones that Odin can flash, detected automatically. **Untested** on any other model. |
-| Mac | macOS 13 or newer. Built and run on an Intel Mac only so far; the build is universal (arm64 + x86_64). |
+| In testing | **SM-N986U1 (Galaxy Note 20 Ultra 5G):** handshake still failing — [hardware](docs/hardware.md). |
+| Intended | Samsung phones that Odin can flash, including many unlisted Download Mode USB product IDs. **Untested** on most models. |
+| Mac | macOS 13 or newer. Universal binary (Apple Silicon + Intel). |
 
-Not supported, on purpose: modem-type (binary type 1) partitions, re-partitioning, NAND erase, and firmware downloading. Partitions the planner can't map unambiguously are refused. Details: [hardware results](docs/hardware.md).
+Not supported, on purpose: modem-type (binary type 1) partitions, re-partitioning, NAND erase, and firmware downloading. Details: [hardware results](docs/hardware.md).
 
 ## Install
 
-A notarized release doesn't exist yet. With a DMG you built yourself:
+1. Download **`BifrostStudio-1.1.0.dmg`** from [GitHub Releases](https://github.com/sritulasiram/bifrost-studio/releases) (or build your own — below).
+2. Open the DMG and drag **Bifrost Studio** to **Applications**.
+3. On first launch, if macOS blocks the app: **right-click** the app → **Open**, or use **System Settings › Privacy & Security › Open Anyway** (ad-hoc signature).
+4. Open **Settings** (⌘,) → **Services** → **Register**, then allow Bifrost Studio in **System Settings › General › Login Items** (background agent + root USB helper).
+5. Put the phone in Download Mode, connect USB, and use **Flash** (drop firmware on the sidebar or each slot).
 
-1. Drag **Bifrost Studio** to **Applications**.
-2. The build is signed ad hoc, so on first launch open **System Settings › Privacy & Security** and click **Open Anyway**.
-3. In the app, open **Settings** (⌘,) and click **Register**, then approve Bifrost Studio in **System Settings › General › Login Items**. This installs a per-user background agent and a small root helper that only claims the Samsung USB interface.
-4. Put the phone in Download Mode, connect it, and follow the three-step flow.
+To uninstall: **Unregister** in Settings, then delete the app. History lives in `~/Library/Application Support/Bifrost Studio/History/`.
 
-To uninstall, click **Unregister** in Settings and move the app to the Trash. Flash history is in `~/Library/Application Support/Bifrost Studio`.
+Maintainers building locally: `./packaging/install-local.sh ~/Library/Caches/BifrostBuild` copies a fresh build into `~/Applications`.
 
 ## Command line
 
 ```sh
-bifrost-cli devices                                   # find the phone (bus and address change on each re-plug)
-bifrost-cli inspect AP_….tar.md5                      # list a package, check its MD5
-bifrost-cli plan --pit device.pit --ap AP_….tar.md5 --csc CSC_….tar.md5   # offline plan, no device
-bifrost-cli agent flash --bus 1 --address 4 --model SM-N920I --ap … --csc …
+CLI="$HOME/Applications/Bifrost Studio.app/Contents/MacOS/bifrost-cli"
+"$CLI" agent devices
+"$CLI" inspect AP_….tar.md5
+bifrost-cli plan --pit device.pit --ap AP_….tar.md5 --csc HOME_CSC_….tar.md5
+"$CLI" agent flash --bus 1 --address 4 --model SM-N920I --ap … --csc …
 ```
 
-Direct USB commands need `sudo`. The `agent` commands go through the background service and don't. Full list: [CLI reference](docs/cli.md).
+Direct USB commands need `sudo`. **`agent`** commands use the background service and do not. Recipes: [CLI reference](docs/cli.md#workflows).
 
 ## Build from source
 
-You need macOS 13+, CMake 3.26+, the Xcode command-line tools and a **universal static libusb 1.0.28 or newer** installed under a prefix you pass as `LIBUSB_ROOT` (for example `~/.local/lib/libusb-1.0.a`). LZ4 and the Android platform-tools are downloaded when you configure, so the first run needs network access.
+You need macOS 13+, **CMake 3.26+** (`brew install cmake`), Xcode command-line tools, and a **universal libusb** under `LIBUSB_ROOT` (static `libusb-1.0.a` and/or dynamic `libusb-1.0.0.dylib` — see [build and install](docs/build-and-install.md)). The app bundle ships the dynamic library when present. LZ4 and Android platform-tools are fetched at configure time (network required once).
 
 ```sh
-cmake -S . -B ../bifrost-build -DCMAKE_BUILD_TYPE=Release -DLIBUSB_ROOT=$HOME/.local
-cmake --build ../bifrost-build -j8
-ctest --test-dir ../bifrost-build --output-on-failure
-cmake --build ../bifrost-build --target dmg
+S=$HOME/Library/Caches/BifrostBuild
+cmake -S . -B "$S" -DCMAKE_BUILD_TYPE=Release -DLIBUSB_ROOT=$HOME/.local
+cmake --build "$S" -j"$(sysctl -n hw.ncpu)"
+./scripts/check-l10n.sh
+ctest --test-dir "$S" --output-on-failure
+cmake --build "$S" --target dmg    # → $S/BifrostStudio-1.1.0.dmg
 ```
 
-Keep build directories outside the repository. More options, install steps and the fuzz build: [build and install](docs/build-and-install.md).
+Keep build directories outside the repo. CI mirror: `./scripts/ci-local.sh`. Signing and notarization: [release](docs/release.md).
 
 ## Documentation
 
-All pages are in [docs/](docs); this table is the index.
+All pages live in [docs/](docs). Start with the [documentation map](docs/README.md), or use this index.
 
 | I want to… | Read |
 |---|---|
 | Understand how the pieces fit and how a flash runs | [Architecture](docs/architecture.md) |
 | Know the Odin protocol, planner rules and open questions | [Protocol and planner](docs/protocol.md) |
 | See what the agent and USB helper do, and the security model | [Services](docs/services.md) |
-| See how the SwiftUI app works | [The app](docs/app.md) |
+| See how the SwiftUI app works (incl. macOS HIG) | [The app](docs/app.md) |
 | Flash a phone, enter Download Mode, fix a failed flash | [Using Bifrost Studio](docs/using.md) |
 | Build, install and register the services | [Build and install](docs/build-and-install.md) |
-| Run tests, the simulator or the fuzzers | [Testing](docs/testing.md) |
+| Run tests, simulator, fuzzers, journal, CI | [Testing](docs/testing.md) |
 | Look up a `bifrost-cli` command | [CLI reference](docs/cli.md) |
 | Look up a C API function, struct or error code | [C API](docs/c-api.md) |
 | Look up an XPC message between app, agent and helper | [Service wire protocol](docs/service-wire.md) |
-| Check current state, known issues and roadmap | [Status](docs/status.md) |
+| Status, coverage gaps, known issues | [Status](docs/status.md) |
+| Phased roadmap (what shipped in 1.1.0) | [Roadmap](docs/roadmap.md) |
+| Ship a signed / notarized DMG (+ trademark checklist) | [Release](docs/release.md) |
 | Find a requirement ID such as F-40 or S-4 | [Requirements](docs/requirements.md) |
 | See what has been observed on a real phone | [Hardware results](docs/hardware.md) |
 | See what changed between versions | [Changelog](CHANGELOG.md) |
@@ -113,4 +125,4 @@ The Odin protocol is undocumented. [Heimdall](https://github.com/Benjamin-Dobell
 
 ## Licence
 
-[MIT](LICENSE). LZ4 (BSD-2-Clause), libusb (LGPL-2.1) and the bundled Android platform-tools (Apache-2.0) keep their own licences; see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt). libusb is linked statically for now and must become a replaceable dynamic library before the DMG is shared (D-3).
+[MIT](LICENSE). LZ4 (BSD-2-Clause), libusb (LGPL-2.1) and the bundled Android platform-tools (Apache-2.0) keep their own licences; see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt). The release DMG includes **`Contents/Frameworks/libusb-1.0.0.dylib`**; you may replace it with a compatible build of the same soname (LGPL-2.1).

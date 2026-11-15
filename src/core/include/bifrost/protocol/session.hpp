@@ -34,6 +34,7 @@ struct PartitionTarget {
     std::uint32_t identifier{};
     std::uint32_t binaryType{};
     std::uint32_t deviceType{};
+    std::string partitionName; // e.g. SUPER; affects wire size on some phones
 };
 
 // Reads `size` bytes of the image at `offset` into `destination`.

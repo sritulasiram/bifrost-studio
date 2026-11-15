@@ -2,39 +2,58 @@
 import AppKit
 import ServiceManagement
 import SwiftUI
+import UniformTypeIdentifiers
 
-enum SidebarItem: String, CaseIterable, Identifiable {
-    case flash = "Flash", history = "History", tools = "Tools"
+enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
+    case flash, inspect, history, device, android
     var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .flash: return L10n.flash
+        case .inspect: return L10n.inspect
+        case .history: return L10n.history
+        case .device: return L10n.device
+        case .android: return L10n.android
+        }
+    }
     var symbol: String {
         switch self {
         case .flash: return "bolt.fill"
+        case .inspect: return "shippingbox"
         case .history: return "clock"
-        case .tools: return "wrench.and.screwdriver"
+        case .device: return "iphone.gen3"
+        case .android: return "cable.connector"
+        }
+    }
+
+    var accessibilityHint: String {
+        switch self {
+        case .flash: return "Firmware flash workflow"
+        case .inspect: return "Verify packages and partition tables without the phone"
+        case .history: return "Past flashes, probes and PIT backups"
+        case .device: return "Probe and PIT backup in Download Mode"
+        case .android: return "adb and TWRP preparation while Android is running"
         }
     }
 }
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var sidebarDropTargeted = false
 
     var body: some View {
         NavigationSplitView {
-            // Plain buttons that set the section directly. List(selection:) did
-            // not register clicks on macOS 26 (checked with a real click).
-            List {
-                Section("Workspace") {
+            List(selection: $model.section) {
+                Section(L10n.workspace) {
                     ForEach(SidebarItem.allCases) { item in
-                        SidebarRow(item: item)
-                            .listRowBackground(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(model.section == item ? Color.accentColor.opacity(0.25) : Color.clear)
-                                    .padding(.horizontal, 6))
+                        WorkspaceSidebarRow(item: item)
+                            .tag(item)
                     }
                 }
-                Section("Devices") {
+                Section(L10n.devices) {
                     if model.devices.isEmpty {
-                        Text("No phone").foregroundStyle(.secondary)
+                        Text(L10n.noPhone).foregroundStyle(.secondary)
+                            .accessibilityLabel(L10n.noPhone)
                     }
                     ForEach(model.devices) { device in
                         DeviceRow(device: device)
@@ -43,17 +62,31 @@ struct RootView: View {
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 170, ideal: 190)
+            .accessibilityLabel(L10n.sidebar)
+            .background(sidebarDropTargeted ? Color.accentColor.opacity(0.12) : Color.clear)
+            .dropDestination(for: URL.self) { urls, _ in
+                model.ingestFirmwareDrop(urls)
+                return true
+            } isTargeted: { sidebarDropTargeted = $0 }
         } detail: {
             VStack(spacing: 0) {
                 AgentBanner()
                 switch model.section {
                 case .flash: FlashFlowView()
+                case .inspect: InspectToolView()
                 case .history: HistoryView()
-                case .tools: ToolsView()
+                case .device: DeviceWorkspaceView()
+                case .android: AndroidWorkspaceView()
                 }
             }
         }
-        .navigationTitle(model.section.rawValue)
+        .navigationTitle(model.section.title)
+        .onAppear { NSApp.activate(ignoringOtherApps: true) }
+        .task {
+            try? await Task.sleep(for: .milliseconds(300))
+            model.bootstrap()
+        }
+        .sheet(isPresented: $model.showWelcome) { WelcomeSheet() }
         .sheet(isPresented: $model.showServiceSetup) { ServiceSetupSheet() }
         .alert("Something went wrong", isPresented: Binding(
             get: { model.actionError != nil }, set: { if !$0 { model.actionError = nil } })) {
@@ -64,27 +97,23 @@ struct RootView: View {
     }
 }
 
-private struct SidebarRow: View {
+/// Workspace navigation row. Uses `List(selection:)` so keyboard and VoiceOver match HIG.
+private struct WorkspaceSidebarRow: View {
     @EnvironmentObject private var model: AppModel
     let item: SidebarItem
 
     var body: some View {
-        Button {
-            model.section = item
-        } label: {
-            HStack {
-                Label(item.rawValue, systemImage: item.symbol)
-                Spacer()
-                if item == .flash, model.job?.running ?? false {
-                    Text("Running").font(.caption)
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(Capsule().fill(Color.accentColor.opacity(0.25)))
-                }
+        HStack {
+            Label(item.title, systemImage: item.symbol)
+            Spacer()
+            if item == .flash, model.job?.running ?? false {
+                Text(L10n.running).font(.caption)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.25)))
+                    .accessibilityLabel(L10n.running)
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(model.section == item ? .isSelected : [])
+        .accessibilityHint(item.accessibilityHint)
     }
 }
 
@@ -94,6 +123,13 @@ private struct DeviceRow: View {
     let device: Device
 
     private var selected: Bool { model.selectedDevice == device.id }
+
+    private var statusCaption: String {
+        if device.inDownloadMode {
+            return device.unlistedProductID ? "Download Mode · unlisted PID" : "Download Mode"
+        }
+        return "Not in Download Mode"
+    }
 
     var body: some View {
         Button {
@@ -106,8 +142,7 @@ private struct DeviceRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Samsung phone").lineLimit(1)
                         .foregroundStyle(device.inDownloadMode ? .primary : .secondary)
-                    Text(device.inDownloadMode ? "Download Mode" : "Not in Download Mode")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(statusCaption).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if selected {
@@ -119,7 +154,10 @@ private struct DeviceRow: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .help(device.inDownloadMode ? "Use this phone for flashing (\(device.id.label))"
+        .help(device.inDownloadMode
+              ? (device.unlistedProductID
+                 ? "Download Mode with unlisted USB product ID \(device.id.label). Export diagnostics if flashing fails."
+                 : "Use this phone for flashing (\(device.id.label))")
               : "Restart this phone into Download Mode to use it (\(device.id.label))")
     }
 }

@@ -111,8 +111,11 @@ void UsbService::Impl::handle(const std::shared_ptr<Peer>& peer, xpc_object_t me
         if (!identity) {
             return fail(badRequest("device identity"));
         }
-        if (identity->vendorId != transport::kSamsungVendorId ||
-            !transport::isDownloadModeProductId(identity->productId)) {
+        if (identity->vendorId != transport::kSamsungVendorId) {
+            return fail(makeError(ErrorCode::invalidArgument,
+                                  "USB helper only claims Samsung devices"));
+        }
+        if (transport::isSamsungAndroidProductId(identity->productId)) {
             return fail(makeError(ErrorCode::invalidArgument,
                                   "USB helper only claims Samsung devices in Download Mode"));
         }

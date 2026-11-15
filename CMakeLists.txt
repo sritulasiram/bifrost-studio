@@ -5,11 +5,14 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 endif()
 
-project(BifrostStudio VERSION 1.0.0 LANGUAGES C CXX)
+project(BifrostStudio VERSION 1.1.0 LANGUAGES C CXX)
 
 option(BIFROST_BUILD_APP "Build the SwiftUI app bundle" ${APPLE})
-set(BIFROST_BUNDLE_ID "local.bifrost.test" CACHE STRING
-    "Bundle identifier (replace with an identifier in a domain you control for release)")
+set(BIFROST_BUNDLE_ID "studio.bifrost.macos" CACHE STRING
+    "Bundle identifier (must match Apple Developer ID for release)")
+option(BIFROST_LIBUSB_SHARED "Bundle and link dynamic libusb (LGPL)" ON)
+set(BIFROST_SIGN_IDENTITY "-" CACHE STRING
+    "codesign identity: - for ad hoc, or 'Developer ID Application: … (TEAMID)' for release")
 
 option(BIFROST_FUZZ "Build fuzz targets with ASan+UBSan (libFuzzer when available)" OFF)
 if(BIFROST_FUZZ)

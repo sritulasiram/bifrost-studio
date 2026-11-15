@@ -221,6 +221,7 @@ bool bf_agent_start_flash(bf_agent* agent, const bf_agent_flash_request* request
         }
         flash.typedModel = request->typed_model;
         flash.acceptDataErase = request->accept_data_erase;
+        flash.acceptBootloaderDowngrade = request->accept_bootloader_downgrade;
         flash.reboot = request->reboot;
         if (request->reviewed_pit != nullptr && request->reviewed_pit_size > 0) {
             flash.reviewedPit.assign(request->reviewed_pit,

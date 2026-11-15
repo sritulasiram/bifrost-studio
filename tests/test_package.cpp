@@ -172,6 +172,8 @@ int main()
         CHECK(firmware::normalizeModel("sm-n950f") == "N950F");
         CHECK(firmware::normalizeModel(" SM-N950F ") == "N950F");
         CHECK(firmware::normalizeModel("N950F") == "N950F");
+        CHECK(firmware::normalizeModel("SMSM-N950F") == "N950F");
+        CHECK(firmware::normalizeModel("SM-SM-N920I") == "N920I");
     }
 
     return test::result();

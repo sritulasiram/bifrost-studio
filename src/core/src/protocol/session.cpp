@@ -109,6 +109,9 @@ Expected<std::uint32_t> Session::exchangePacket(const std::uint8_t* packet,
     if (auto written = writeControl(packet, timeoutMs); !written) {
         return written.error();
     }
+    if (auto drained = bestEffortDrain(); !drained) {
+        return drained.error();
+    }
     std::array<std::uint8_t, kResponseBufferSize> response{};
     auto received = interface_.bulkRead(response.data(), response.size(), timeoutMs);
     if (!received) {
@@ -169,9 +172,24 @@ Status Session::bestEffortZeroLengthOut(unsigned int timeoutMs)
 
 Status Session::bestEffortDrain()
 {
-    auto drained = interface_.drainZeroLength(timeouts_.zeroLengthMs);
-    if (!drained && drained.error().code == ErrorCode::usbDisconnected) {
-        return drained.error();
+    // Bootloaders sometimes send a zero-length IN packet after the drain window
+    // (see docs/status.md). Stay quiet for two consecutive empty reads before
+    // the next bulk exchange.
+    constexpr int kQuietSlicesRequired = 2;
+    constexpr unsigned kSliceMs = 50;
+    constexpr unsigned kMaxMs = 500;
+    int quiet = 0;
+    unsigned elapsed = 0;
+    while (quiet < kQuietSlicesRequired && elapsed < kMaxMs) {
+        auto drained = interface_.drainZeroLength(kSliceMs);
+        if (!drained) {
+            if (drained.error().code == ErrorCode::usbDisconnected) {
+                return drained.error();
+            }
+            return success();
+        }
+        ++quiet;
+        elapsed += kSliceMs;
     }
     return success();
 }
@@ -203,6 +221,7 @@ Status Session::handshake()
         if (attempt != 0) {
             std::this_thread::sleep_for(kPause);
         }
+        (void)bestEffortDrain();
         if (auto written = writeAll(kHandshakeRequest.data(), kHandshakeRequest.size(),
                                     timeouts_.handshakeMs);
             !written) {
@@ -212,19 +231,29 @@ Status Session::handshake()
             last = written.error();
             continue;
         }
-        std::array<std::uint8_t, 7> reply{};
-        auto received = interface_.bulkRead(reply.data(), reply.size(),
-                                            timeouts_.handshakeMs);
-        if (!received) {
-            if (received.error().code != ErrorCode::usbTimeout) {
-                return received.error();
+        std::array<std::uint8_t, 4> reply{};
+        std::size_t got = 0;
+        while (got < kHandshakeResponse.size()) {
+            auto received =
+                interface_.bulkRead(reply.data() + got, kHandshakeResponse.size() - got,
+                                    timeouts_.handshakeMs);
+            if (!received) {
+                if (received.error().code != ErrorCode::usbTimeout) {
+                    return received.error();
+                }
+                last = std::move(received).error();
+                got = 0;
+                break;
             }
-            last = std::move(received).error();
+            if (*received == 0) {
+                continue;
+            }
+            got += *received;
+        }
+        if (got < kHandshakeResponse.size()) {
             continue;
         }
-        if (*received != kHandshakeResponse.size() ||
-            !std::equal(kHandshakeResponse.begin(), kHandshakeResponse.end(),
-                        reply.begin())) {
+        if (!std::equal(kHandshakeResponse.begin(), kHandshakeResponse.end(), reply.begin())) {
             return makeError(ErrorCode::protocolViolation,
                              "Unexpected handshake reply; expected LOKE");
         }
@@ -341,8 +370,12 @@ Status Session::announceTotalBytes(std::uint64_t totalBytes)
 
 Status Session::close(bool reboot)
 {
-    if (auto state = requireState(State::open, "close the session"); !state) {
-        return state.error();
+    // After a pre-data failure (readPit, etc.) the session is `failed` but the
+    // device may still need 0x67/0 before another job.
+    if (state_ != State::open && !(state_ == State::failed && !dataSent_)) {
+        if (auto state = requireState(State::open, "close the session"); !state) {
+            return state.error();
+        }
     }
     const auto onFailure = [this](Error error) {
         error.dataState = dataSent_ ? DataState::complete : DataState::none;

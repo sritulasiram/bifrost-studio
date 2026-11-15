@@ -274,6 +274,9 @@ Xpc encodeEnumeration(const transport::UsbEnumeration& enumeration)
         auto item = Xpc::adopt(xpc_dictionary_create(nullptr, nullptr, 0));
         putIdentity(item.get(), device.identity);
         xpc_dictionary_set_bool(item.get(), "odin", device.odinInterface.has_value());
+        if (device.unlistedDownloadModeProductId) {
+            xpc_dictionary_set_bool(item.get(), "unlistedPid", true);
+        }
         if (device.odinInterface) {
             putSelection(item.get(), *device.odinInterface);
         }
@@ -297,6 +300,7 @@ transport::UsbEnumeration decodeEnumeration(xpc_object_t d)
         if (getBool(item, "odin")) {
             info.odinInterface = getSelection(item);
         }
+        info.unlistedDownloadModeProductId = getBool(item, "unlistedPid");
         enumeration.devices.push_back(std::move(info));
     });
     enumeration.warnings = getStringArray(d, "warnings");

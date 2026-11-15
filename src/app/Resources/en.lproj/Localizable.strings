@@ -1,0 +1,27 @@
+/* Sidebar & navigation */
+"Flash" = "Flash";
+"Inspect" = "Inspect";
+"History" = "History";
+"Device" = "Device";
+"Android" = "Android";
+"Workspace" = "Workspace";
+"Devices" = "Devices";
+"No phone" = "No phone";
+"Running" = "Running";
+
+/* Flash flow */
+"Setup" = "Setup";
+"Review & Confirm" = "Review & Confirm";
+"Flash step" = "Flash";
+"Continue" = "Continue";
+"Back" = "Back";
+"Continue to review" = "Continue to review";
+
+/* Help menu */
+"Bifrost Studio Help" = "Bifrost Studio Help";
+"Safety & design" = "Safety & design";
+
+/* Accessibility */
+"Flash progress" = "Flash progress";
+"Firmware verification progress" = "Firmware verification progress";
+"Sidebar" = "Sidebar";

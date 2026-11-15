@@ -137,7 +137,7 @@ std::string normalizeModel(const std::string& model)
             result.push_back(c);
         }
     }
-    if (result.compare(0, 2, "SM") == 0 && result.size() > 2) {
+    while (result.size() > 2 && result.compare(0, 2, "SM") == 0) {
         result.erase(0, 2);
     }
     return result;

@@ -138,6 +138,18 @@ int main()
         CHECK(usb.sent(0x67, 0) && !usb.sent(0x66, 0));
     }
 
+    // PIT read fails after session open: session closed, no image data.
+    {
+        auto reads = sessionAndPit(pit);
+        reads[4] = test::Read{{}, ErrorCode::usbDisconnected};
+        reads.push_back(ok(response(0x67, 0)));
+        test::ScriptedInterface usb(reads);
+        auto report = flash::flash(usb, {*loaded, {"SM-N950F", false}, std::nullopt});
+        CHECK(!report && report.error().code == ErrorCode::usbDisconnected &&
+              report.error().dataState == DataState::none);
+        CHECK(usb.sent(0x67, 0) && !usb.sent(0x66, 0));
+    }
+
     // A device whose PIT lacks a partition: refused before any data.
     {
         const auto smallPit = test::makePit({{1, "BOOT", "boot.img"}});

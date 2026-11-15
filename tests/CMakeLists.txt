@@ -34,13 +34,21 @@ target_link_libraries(test_capi PRIVATE BifrostCApi bifrost_sim)
 target_compile_options(test_capi PRIVATE -Wall -Wextra)
 add_test(NAME test_capi COMMAND test_capi)
 
-# The public header compiles as C, and the dylib exports only bf_* symbols.
+# The public header compiles as C and links the C API (dylib in normal builds).
 add_executable(test_capi_header test_capi_header.c)
 set_source_files_properties(test_capi_header.c PROPERTIES LANGUAGE C)
-target_link_libraries(test_capi_header PRIVATE Bifrost)
 target_compile_options(test_capi_header PRIVATE -Wall -Wextra -pedantic -std=c99)
+if(BIFROST_FUZZ)
+    target_sources(test_capi_header PRIVATE
+        "${PROJECT_SOURCE_DIR}/src/core/src/capi/default_transport_none.cpp")
+    target_include_directories(test_capi_header PRIVATE
+        "${PROJECT_SOURCE_DIR}/src/core/src")
+    target_link_libraries(test_capi_header PRIVATE BifrostCApi)
+else()
+    target_link_libraries(test_capi_header PRIVATE Bifrost)
+endif()
 add_test(NAME test_capi_header COMMAND test_capi_header)
-if(APPLE)
+if(APPLE AND NOT BIFROST_FUZZ)
     add_test(NAME test_capi_exports
         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/check_exports.sh" "$<TARGET_FILE:Bifrost>")
 endif()
@@ -52,6 +60,7 @@ endif()
 # Background agent and USB helper over in-process XPC.
 if(APPLE)
     bifrost_test(test_service BifrostService)
+    bifrost_test(test_journal BifrostService)
 endif()
 if(APPLE)
     add_executable(test_capi_agent test_capi_agent.cpp

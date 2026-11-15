@@ -14,6 +14,13 @@
 namespace bifrost::transport {
 namespace {
 
+std::string toHex(std::uint16_t value)
+{
+    char buffer[8];
+    std::snprintf(buffer, sizeof(buffer), "%04X", value);
+    return buffer;
+}
+
 ErrorCode classify(int code)
 {
     switch (code) {
@@ -355,12 +362,24 @@ Expected<UsbEnumeration> LibusbTransport::enumerate()
         info.identity = {descriptor.idVendor, descriptor.idProduct,
                          libusb_get_bus_number(raw[i]),
                          libusb_get_device_address(raw[i])};
-        // Only Download Mode devices need their configuration (and only they
-        // are claimed). In Android mode the SM-N920I reports 2 configurations.
-        if (isDownloadModeProductId(descriptor.idProduct)) {
+        // Download Mode and single-config Samsung devices get a CDC interface
+        // scan. Android phones expose a similar shape but use Android PIDs and
+        // multiple configurations (SM-N920I: 2).
+        if (shouldProbeSamsungConfiguration(descriptor.idProduct,
+                                            descriptor.bNumConfigurations)) {
             if (auto config = readConfiguration(raw[i], descriptor); config) {
                 info.alternates = readAlternates(**config);
                 info.odinInterface = findOdinInterface(info.alternates);
+                if (info.odinInterface && !isDownloadModeProductId(descriptor.idProduct)) {
+                    info.unlistedDownloadModeProductId = true;
+                    enumeration.warnings.push_back(
+                        "Unlisted Download Mode product ID 0x" +
+                        toHex(descriptor.idProduct) +
+                        " (bus " + std::to_string(info.identity.busNumber) +
+                        ", address " +
+                        std::to_string(info.identity.deviceAddress) +
+                        "); report this in a bug report");
+                }
             } else {
                 enumeration.warnings.push_back(config.error().message);
             }
@@ -376,10 +395,6 @@ Expected<std::unique_ptr<ClaimedInterface>> LibusbTransport::claim(
     if (identity.vendorId != kSamsungVendorId) {
         return makeError(ErrorCode::invalidArgument,
                          "Refusing to claim a non-Samsung USB device");
-    }
-    if (!isDownloadModeProductId(identity.productId)) {
-        return makeError(ErrorCode::invalidArgument,
-                         "Refusing to claim a Samsung device that is not in Download Mode");
     }
     auto context = freshContext();
     if (!context) {
@@ -404,15 +419,23 @@ Expected<std::unique_ptr<ClaimedInterface>> LibusbTransport::claim(
             continue;
         }
 
+        if (!shouldProbeSamsungConfiguration(descriptor.idProduct,
+                                             descriptor.bNumConfigurations)) {
+            return makeError(ErrorCode::invalidArgument,
+                             "Refusing to claim a Samsung device that is not in Download Mode");
+        }
         auto config = readConfiguration(raw[i], descriptor);
         if (!config) {
             return std::move(config).error();
         }
         const auto selection = findOdinInterface(readAlternates(**config));
         if (!selection) {
-            return makeError(ErrorCode::usbOther,
+            return makeError(ErrorCode::invalidArgument,
                              "No CDC Data interface with one bulk IN and one "
                              "bulk OUT endpoint was found");
+        }
+        if (!isDownloadModeProductId(descriptor.idProduct)) {
+            // Allowed: interface probe passed on a single-configuration device.
         }
 
         libusb_device_handle* handle = nullptr;

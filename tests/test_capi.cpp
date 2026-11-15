@@ -105,7 +105,7 @@ bool contains(const std::vector<std::int32_t>& values, std::int32_t value)
 int main()
 {
     CHECK(bf_api_version() == BF_API_VERSION);
-    CHECK(std::string(bf_version()) == "1.0.0");
+    CHECK(std::string(bf_version()) == "1.1.0");
     CHECK(std::string(bf_code_name(BF_E_USB_STALL)) == bifrost::toString(bifrost::ErrorCode::usbStall));
     CHECK(std::string(bf_code_name(BF_E_UNSUPPORTED)) == "unsupported");
     CHECK(std::string(bf_code_name(9999)) == "unknown");
@@ -239,6 +239,20 @@ int main()
         bf_plan_free(refused);
         bf_pit_free(small);
 
+        auto* same = bf_pit_compare(pit, pit);
+        CHECK(same != nullptr && bf_pit_comparison_same_layout(same) &&
+              bf_pit_comparison_layout_count(same) == 0 &&
+              bf_pit_comparison_size_count(same) == 0);
+        bf_pit_comparison_free(same);
+
+        auto* smallAgain = bf_pit_parse(smallPit.data(), smallPit.size(), &error);
+        auto* diff = bf_pit_compare(smallAgain, pit);
+        CHECK(diff != nullptr && !bf_pit_comparison_same_layout(diff) &&
+              bf_pit_comparison_layout_count(diff) > 0);
+        CHECK(bf_pit_comparison_layout(diff, 0) != nullptr);
+        bf_pit_comparison_free(diff);
+        bf_pit_free(smallAgain);
+
         bf_plan_free(plan);
         bf_pit_free(pit);
         bf_packages_free(packages);
@@ -298,7 +312,7 @@ int main()
         recorder.reentrantCode = -1;
 
         const auto id = simId();
-        bf_flash_options options{"SM-N950F", false, true, reviewed};
+        bf_flash_options options{"SM-N950F", false, false, true, reviewed};
         bf_flash_report report;
         const bool flashed = bf_flash(sim.ctx, &id, packages, &options, &report, &error);
         if (!flashed) {
@@ -325,7 +339,7 @@ int main()
         bf_error error;
         auto* packages = bf_packages_load(sim.ctx, slots, 1, &error);
         const auto id = simId();
-        bf_flash_options options{"SM-G973F", false, true, nullptr};
+        bf_flash_options options{"SM-G973F", false, false, true, nullptr};
         CHECK(!bf_flash(sim.ctx, &id, packages, &options, nullptr, &error));
         CHECK(error.code == BF_E_MODEL_MISMATCH && error.data_state == BF_DATA_NONE);
         CHECK(sim.device->dataBytesReceived() == 0);
@@ -342,7 +356,7 @@ int main()
         bf_error error;
         auto* packages = bf_packages_load(sim.ctx, slots, 1, &error);
         const auto id = simId();
-        bf_flash_options options{"SM-N950F", false, true, nullptr};
+        bf_flash_options options{"SM-N950F", false, false, true, nullptr};
         CHECK(!bf_flash(sim.ctx, &id, packages, &options, nullptr, &error));
         CHECK(error.code == BF_E_USB_STALL && error.data_state == BF_DATA_PARTIAL);
         CHECK(std::string(error.message).size() > 0);
@@ -355,7 +369,7 @@ int main()
         bf_error error;
         auto* packages = bf_packages_load(sim.ctx, slots, 1, &error);
         const auto id = simId();
-        bf_flash_options options{"SM-N950F", false, false, nullptr};
+        bf_flash_options options{"SM-N950F", false, false, false, nullptr};
         bf_cancel(sim.ctx, BF_CANCEL_BEFORE_DATA);
         CHECK(!bf_flash(sim.ctx, &id, packages, &options, nullptr, &error));
         CHECK(error.code == BF_E_CANCELLED && error.data_state == BF_DATA_NONE);
@@ -367,7 +381,7 @@ int main()
         bf_error error;
         auto* packages = bf_packages_load(sim.ctx, slots, 1, &error);
         const auto id = simId();
-        bf_flash_options options{"SM-N950F", false, false, nullptr};
+        bf_flash_options options{"SM-N950F", false, false, false, nullptr};
         bf_cancel(sim.ctx, BF_CANCEL_BEFORE_DATA);
         bf_cancel_reset(sim.ctx);
         CHECK(bf_flash(sim.ctx, &id, packages, &options, nullptr, &error));

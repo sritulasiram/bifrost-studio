@@ -28,7 +28,9 @@ void report(const Observer& observer, const Progress& progress)
 // the device in a clean state. The original error is preserved.
 Error abortCleanly(odin::Session& session, Error error)
 {
-    if (session.state() == odin::Session::State::open && !session.dataSent()) {
+    const auto state = session.state();
+    if (!session.dataSent() &&
+        (state == odin::Session::State::open || state == odin::Session::State::failed)) {
         if (auto closed = session.close(false); !closed) {
             error.message += " (session close also failed: " +
                              closed.error().message + ")";
@@ -121,7 +123,7 @@ Expected<std::vector<std::uint8_t>> readDevicePitBytes(transport::ClaimedInterfa
     }
     auto bytes = session.readPit();
     if (!bytes) {
-        return std::move(bytes).error(); // session state is uncertain; left open
+        return abortCleanly(session, std::move(bytes).error());
     }
     if (auto closed = session.close(false); !closed) {
         return closed.error();
@@ -205,7 +207,7 @@ Expected<Report> flash(transport::ClaimedInterface& interface, const Request& re
     report(observer, {Phase::readingPit, {}, {}, 0, 0, 0, 0});
     auto pitBytes = session.readPit();
     if (!pitBytes) {
-        return std::move(pitBytes).error(); // session state uncertain; left open
+        return abortCleanly(session, std::move(pitBytes).error());
     }
     auto devicePit = pit::parse(pitBytes->data(), pitBytes->size());
     if (!devicePit) {
@@ -252,7 +254,7 @@ Expected<Report> flash(transport::ClaimedInterface& interface, const Request& re
         total += size;
     }
     if (auto announced = session.announceTotalBytes(total); !announced) {
-        return announced.error();
+        return abortCleanly(session, announced.error());
     }
 
     std::uint64_t completed = 0;
@@ -285,7 +287,7 @@ Expected<Report> flash(transport::ClaimedInterface& interface, const Request& re
                 file.entry.name + " -> " + file.partition.partitionName);
         auto transferred = session.transferFile(
             {file.partition.identifier, file.partition.binaryType,
-             file.partition.deviceType},
+             file.partition.deviceType, file.partition.partitionName},
             size, reader,
             [&](std::uint64_t done, bool committing) {
                 progress.phase = committing ? Phase::committing : Phase::transferring;

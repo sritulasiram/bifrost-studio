@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <string>
 
 namespace bifrost::odin {
@@ -48,6 +49,36 @@ constexpr std::uint32_t kPartResponse = 0x00;
 // Read with a full max-packet buffer so an unexpectedly long reply is
 // reported as a protocol error instead of a libusb overflow.
 constexpr std::size_t kAckBufferSize = 512;
+constexpr std::uint32_t kOdinSizeRound = 512;
+
+std::string upperAscii(const std::string& text)
+{
+    std::string out;
+    out.reserve(text.size());
+    for (unsigned char c : text) {
+        out.push_back(static_cast<char>(std::toupper(c)));
+    }
+    return out;
+}
+
+bool partitionUsesOdinSizeRounding(const std::string& name)
+{
+    const auto key = upperAscii(name);
+    // Exynos-era SYSTEM flashes succeeded without this (SM-N920I). SUPER on
+    // Snapdragon layouts is the immediate gap (docs/protocol.md).
+    return key == "SUPER" || key == "USERDATA";
+}
+
+// odin4 rounds the size in the end-of-sequence packet for a few partition
+// types (docs/protocol.md). The bytes on the wire are unchanged.
+std::uint32_t wireSequenceSize(std::uint32_t realSize, const PartitionTarget& target, bool last)
+{
+    if (!last || !partitionUsesOdinSizeRounding(target.partitionName)) {
+        return realSize;
+    }
+    const std::uint32_t rounded = (realSize + kOdinSizeRound - 1u) & ~(kOdinSizeRound - 1u);
+    return std::max(realSize, rounded);
+}
 
 } // namespace
 
@@ -168,9 +199,10 @@ Status Session::sendSequence(const PartitionTarget& target, std::uint32_t realSi
     }
     // Phone layout: destination 0, real size, binary type (0 for AP), device
     // type, partition identifier, end-of-file flag.
+    const std::uint32_t wireSize = wireSequenceSize(realSize, target, last);
     const auto end = encodeControlPacket(
         kCommandFileTransfer, kEndSequence,
-        {0, realSize, target.binaryType, target.deviceType, target.identifier,
+        {0, wireSize, target.binaryType, target.deviceType, target.identifier,
          last ? 1u : 0u});
     cursor.stage = "waiting for the phone to write the sequence";
     auto committed = exchangePacket(end.data(), kCommandFileTransfer, timeouts_.sequenceEndMs);

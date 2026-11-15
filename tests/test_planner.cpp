@@ -160,6 +160,21 @@ int main()
         CHECK(!planner::checkConfirmation(plan, {"", false}));
     }
 
+    // BL revision below other packages warns about bootloader downgrade.
+    {
+        const auto oldBl = load(dir, Slot::bl, "BL_N950FXXU7DUH1_CL1.tar.md5",
+                                TarBuilder().file("sboot.bin", data));
+        const auto newAp = load(dir, Slot::ap, "AP_N950FXXU8DUH1_CL1.tar.md5",
+                                TarBuilder().file("boot.img", data).file("system.img", data));
+        const auto plan = planner::buildPlan(pit, {oldBl, newAp});
+        CHECK(plan.flashable());
+        CHECK(std::any_of(plan.warnings.begin(), plan.warnings.end(), [](const auto& w) {
+            return w.message.find("downgrading") != std::string::npos;
+        }));
+        CHECK(!planner::checkConfirmation(plan, {"SM-N950F", false, false}));
+        CHECK(planner::checkConfirmation(plan, {"SM-N950F", false, true}));
+    }
+
     // Full CSC requires acknowledging the data erase.
     {
         const auto csc = load(dir, Slot::csc, "CSC_OXM_N950FOXM8DUH1_CL1.tar.md5",

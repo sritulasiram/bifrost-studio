@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct BifrostStudioApp: App {
+    @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
     @StateObject private var model = AppModel()
 
     init() {
@@ -14,22 +15,13 @@ struct BifrostStudioApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             RootView()
                 .environmentObject(model)
                 .frame(minWidth: 900, minHeight: 640)
         }
         .defaultSize(width: 1100, height: 760)
-        .commands {
-            SidebarCommands()
-            CommandGroup(after: .sidebar) {
-                Divider()
-                Button("Flash") { model.section = .flash }.keyboardShortcut("1", modifiers: .command)
-                Button("History") { model.section = .history }.keyboardShortcut("2", modifiers: .command)
-                Button("Tools") { model.section = .tools }.keyboardShortcut("3", modifiers: .command)
-            }
-            // Deliberately no keyboard shortcut that starts a flash.
-        }
+        .commands { AppCommands(model: model) }
 
         Settings {
             SettingsView().environmentObject(model)

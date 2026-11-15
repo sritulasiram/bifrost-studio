@@ -5,8 +5,8 @@ For tests, the simulator and fuzzing, see [testing.md](testing.md).
 ```mermaid
 flowchart LR
     C[cmake configure<br/>LIBUSB_ROOT=$HOME/.local] --> B[cmake --build<br/>-> Bifrost Studio.app]
-    B --> T[ctest<br/>12 suites]
-    B --> D[target dmg<br/>-> BifrostStudio-1.0.0.dmg]
+    B --> T[ctest<br/>13 suites]
+    B --> D[target dmg<br/>-> BifrostStudio-VERSION.dmg]
     B --> I[ditto to ~/Applications]
     I --> R[--register-services<br/>approve in Login Items]
     R --> K[kickstart agent and usbd<br/>after each update]
@@ -21,11 +21,11 @@ S=$HOME/Library/Caches/BifrostBuild          # keep the build directory outside 
 cmake -S . -B $S -DCMAKE_BUILD_TYPE=Release -DLIBUSB_ROOT=$HOME/.local
 cmake --build $S -j8                          # → "$S/Bifrost Studio.app"
 ctest --test-dir $S --output-on-failure
-cmake --build $S --target dmg                 # → $S/BifrostStudio-1.0.0.dmg
+cmake --build $S --target dmg                 # → $S/BifrostStudio-<VERSION>.dmg (VERSION from CMakeLists.txt)
 ```
 
 ## Dependencies
-- **libusb:** universal static `~/.local/lib/libusb-1.0.a` (1.0.29; at least 1.0.28 is required).
+- **libusb:** 1.0.28+ under `LIBUSB_ROOT` (default `~/.local`). For release builds, install a **universal dynamic** `libusb-1.0.0.dylib` there (`-DBIFROST_LIBUSB_SHARED=ON`, the default). A static `libusb-1.0.a` is still accepted for local development.
 - **LZ4:** v1.10.0, fetched at configure time and pinned by commit, so the first configure needs network access.
 - **Android platform-tools:** r37.0.1 (`adb`), downloaded at configure time with a pinned SHA-256 and copied into the app's Resources. Needs network access on first configure.
 - **Security framework:** must stay linked, because static libusb uses `SecTask*`.
@@ -34,6 +34,10 @@ cmake --build $S --target dmg                 # → $S/BifrostStudio-1.0.0.dmg
 - `-DBIFROST_BUILD_APP=OFF`: core and tests only.
 - `-DBIFROST_ENABLE_USB=OFF`: no libusb.
 - `-DBIFROST_TEAM_ID=…`: team-based peer checks.
+- `-DBIFROST_LIBUSB_SHARED=OFF`: force static libusb even when a `.dylib` is present.
+- `-DBIFROST_BUNDLE_ID=…`: app bundle identifier (default `studio.bifrost.macos`).
+- `-DBIFROST_SIGN_IDENTITY=…`: `Developer ID Application: …` for release; `-` (default) is ad hoc.
+- **Release DMG:** see [release.md](release.md) (`cmake --build "$S" --target release` or `./packaging/release.sh`).
 - `-DBIFROST_FUZZ=ON`: sanitizers and fuzz targets; use a single architecture.
 
 ## Installing for use

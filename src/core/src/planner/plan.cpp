@@ -298,6 +298,52 @@ FlashPlan buildPlan(const pit::Table& devicePit,
              "carefully before confirming",
              false});
     }
+    if (plan.bootloaderRevision) {
+        int maxOther = -1;
+        for (const auto& item : packages) {
+            if (!item.package || item.slot == Slot::bl) {
+                continue;
+            }
+            const auto name = firmware::parseFirmwareName(item.package->path);
+            if (name.bootloaderRevision) {
+                maxOther = std::max(maxOther, *name.bootloaderRevision);
+            }
+        }
+        if (maxOther >= 0 && *plan.bootloaderRevision < maxOther) {
+            plan.warnings.push_back(
+                {"The BL package bootloader revision (" + std::to_string(*plan.bootloaderRevision) +
+                     ") is lower than other selected packages (" + std::to_string(maxOther) +
+                     "); you may be downgrading the bootloader",
+                 true});
+        }
+    }
+
+    const bool hasSuper = std::any_of(plan.files.begin(), plan.files.end(),
+                                      [](const PlannedFile& f) {
+                                          const auto& name = f.partition.partitionName;
+                                          return name == "SUPER" || name == "super";
+                                      });
+    const auto isAbSlot = [](const std::string& name) {
+        return name.size() >= 2 &&
+               (name.compare(name.size() - 2, 2, "_a") == 0 ||
+                name.compare(name.size() - 2, 2, "_b") == 0);
+    };
+    const bool hasDualSlot = std::any_of(devicePit.entries.begin(), devicePit.entries.end(),
+                                         [&](const pit::Entry& e) {
+                                             return isAbSlot(e.partitionName);
+                                         });
+    if (hasSuper) {
+        plan.warnings.push_back(
+            {"This plan includes the SUPER (dynamic partitions) image. "
+             "Wire transfer uses 512-byte rounding on the last sequence "
+             "(UNVERIFIED on your phone).",
+             false});
+    } else if (hasDualSlot) {
+        plan.warnings.push_back(
+            {"The partition table includes A/B slot names. "
+             "Only images explicitly listed in the firmware are written.",
+             false});
+    }
     return plan;
 }
 
@@ -335,9 +381,18 @@ Status checkConfirmation(const FlashPlan& plan, const Confirmation& confirmation
                          "Typed model SM-" + typed + " does not match the firmware "
                          "model SM-" + plan.detectedModel);
     }
-    if (plan.requiresAcknowledgement() && !confirmation.acknowledgeDataErase) {
+    if (plan.erasesUserData && !confirmation.acknowledgeDataErase) {
         return makeError(ErrorCode::planRefused,
                          "This plan erases user data; acknowledge that to continue");
+    }
+    const bool bootloaderDowngrade = std::any_of(
+        plan.warnings.begin(), plan.warnings.end(), [](const Warning& w) {
+            return w.requiresAcknowledgement &&
+                   w.message.find("downgrading the bootloader") != std::string::npos;
+        });
+    if (bootloaderDowngrade && !confirmation.acknowledgeBootloaderDowngrade) {
+        return makeError(ErrorCode::planRefused,
+                         "This plan may downgrade the bootloader; acknowledge that to continue");
     }
     return success();
 }

@@ -15,6 +15,10 @@ int main()
     CHECK(bifrost::transport::isDownloadModeProductId(0x68C3));
     CHECK(!bifrost::transport::isDownloadModeProductId(0x6860));
     CHECK(!bifrost::transport::isDownloadModeProductId(0x0000));
+    CHECK(bifrost::transport::isSamsungAndroidProductId(0x6860));
+    CHECK(bifrost::transport::shouldProbeSamsungConfiguration(0x685D, 2));
+    CHECK(!bifrost::transport::shouldProbeSamsungConfiguration(0x6860, 2));
+    CHECK(bifrost::transport::shouldProbeSamsungConfiguration(0x1234, 1));
 
     const std::vector<AlternateSetting> valid{
         {0, 0, 0x02, 0, 0, {{0x83, TransferType::interrupt, 16}}},

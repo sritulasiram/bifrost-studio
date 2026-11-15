@@ -34,6 +34,8 @@ struct UsbDeviceInfo {
     UsbIdentity identity;
     std::vector<AlternateSetting> alternates;
     std::optional<OdinInterface> odinInterface;
+    /// Odin interface found but product ID not in the Heimdall whitelist (report for P-4).
+    bool unlistedDownloadModeProductId{false};
 };
 
 struct UsbEnumeration {

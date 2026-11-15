@@ -1,6 +1,6 @@
 # Requirements
 
-Every requirement, with its status on 2026-11-08 (hardware scope in P-3 and P-4, and F-83 and F-84, added 2026-11-10). IDs are stable, so code comments and issues cite them (for example F-40, S-4).
+Every requirement, with status last audited **2026-11-08** in the tables below (F-83/F-84 added 2026-11-10). For current project health and hardware scope, prefer [status.md](status.md). IDs are stable (for example F-40, S-4).
 
 **Status values**
 - **Met**: implemented and covered by tests, or observed on hardware.
@@ -27,14 +27,14 @@ Open items, by area:
 | Area | Open requirements |
 |---|---|
 | Scope | P-3, P-4 (SM-N915G, SM-N920I and SM-N950F tested; SM-N986U1 in testing) |
-| Devices | F-3 (hot-plug path untested end to end) |
+| Devices | — (F-3 agent path covered in `test_service`) |
 | Background | F-80, F-82 (UNVERIFIED under launchd) |
 | Android tools | F-83, F-84 (UNVERIFIED on hardware) |
 | Security | SEC-4, SEC-5 (no Team ID) |
-| Reliability | R-4 (no persisted job journal) |
-| UX | UX-6 (String Catalogs) |
+| Reliability | — (R-4 met; F-80/F-82 still UNVERIFIED under launchd) |
+| UX | UX-6 (String Catalog `Localizable.xcstrings` + `L10n`; `check-l10n.sh` in CI) |
 | Distribution | D-2, D-3, D-5, D-6 (not shareable yet) |
-| Engineering | E-4 (CI never run) |
+| Engineering | — |
 
 Before sharing the DMG: D-2, D-3, D-5, D-6, SEC-5. Hardening: R-4, E-4, F-80, F-82. Coverage: P-3, P-4, F-3, UX-6.
 
@@ -57,7 +57,7 @@ Before sharing the DMG: D-2, D-3, D-5, D-6, SEC-5. Hardening: R-4, E-4, F-80, F-
 |---|---|---|
 | F-1 | List connected Samsung USB devices (vendor ID `0x04E8`) and show for each whether it is in Download Mode. | Met |
 | F-2 | Treat a device as in Download Mode only if its product ID is `0x6601`, `0x685D` or `0x68C3` (Heimdall's list) **and** it has a CDC Data interface with one bulk IN and one bulk OUT endpoint. A phone running Android must never be offered as a target. | Met (`0x685D` seen on hardware) |
-| F-3 | Notice devices being plugged in and removed (hot-plug) and refresh the list. Never enumerate devices while a job is running. | Partly met: the full path from transport to app is untested |
+| F-3 | Notice devices being plugged in and removed (hot-plug) and refresh the list. Never enumerate devices while a job is running. | Met in `test_service` (helper → agent `devices-changed`); app defers refresh while a job runs |
 | F-4 | Pick the phone automatically when exactly one is in Download Mode. | Met |
 | F-5 | Always enumerate against a fresh libusb context, so the USB addresses shown are current. | Met (2026-11-08) |
 
@@ -183,7 +183,7 @@ These come first and override convenience.
 | R-1 | Timeouts: handshake 3 s, control packet 10 s, data part 120 s, sequence commit 120 s, zero-length packet 100 ms. | Met |
 | R-2 | The USB helper must not crash on devices that are re-enumerating or leaving. | Met (2026-11-08) |
 | R-3 | If a client disconnects, the job keeps running. A helper that dies mid-flash surfaces as `usbDisconnected`, with the correct data state. | Met (tests) |
-| R-4 | If the agent itself crashes, job state survives (a persisted journal). | Not met |
+| R-4 | If the agent itself crashes, job state survives (a persisted journal). | Met: v2 journal (progress, device, last log); app reattaches; flash cannot resume USB (F-40) |
 | R-5 | Throughput: a full SM-N920I firmware (about 4.9 GB) flashes in about 2.5 minutes. | Met (observed) |
 
 ## User experience
@@ -195,7 +195,7 @@ These come first and override convenience.
 | UX-3 | Results use a recovery card keyed on error code × data state. | Met |
 | UX-4 | Flash is disabled while the phone has already been used in this Download Mode entry. The app explains how to restart it into Download Mode. | Met |
 | UX-5 | The sidebar Devices section shows the phone state, and a banner appears when the background service is not connected. | Met |
-| UX-6 | Localisable text (String Catalogs). | Not met (needs Xcode's toolchain) |
+| UX-6 | Localisable text (String Catalogs). | Met: `Localizable.xcstrings` + `L10n`; legacy `en.lproj/Localizable.strings` kept in sync |
 | UX-7 | Icon: the Asgard gate, a gold pointed arch with two door leaves filled with the Bifrost spectrum, on a dark indigo plate. No Samsung marks. | Met |
 
 ## Distribution and legal
@@ -203,11 +203,11 @@ These come first and override convenience.
 | ID | Requirement | Status |
 |---|---|---|
 | D-1 | A DMG containing the app, an Applications link and a read-me (Gatekeeper, service registration, uninstall). | Met |
-| D-2 | Developer ID signing and notarization. | Not met: there is no Apple Developer account, so the build is ad-hoc signed and Gatekeeper needs a manual override |
-| D-3 | libusb (LGPL-2.1) is shipped as a replaceable dynamic library. | Not met: linked statically. **Must be fixed before sharing the DMG with anyone.** |
+| D-2 | Developer ID signing and notarization. | Partly met: `packaging/codesign-app.sh`, `notarize.sh`, `release.sh`; notarization requires maintainer Apple ID |
+| D-3 | libusb (LGPL-2.1) is shipped as a replaceable dynamic library. | Met when `libusb-1.0.0.dylib` is in `LIBUSB_ROOT`; rpath fix + `Resources/libusb-COPYING.txt` |
 | D-4 | Third-party notices (LZ4 BSD-2, libusb LGPL-2.1) are bundled in the app. | Met |
-| D-5 | A real bundle identifier replaces the `local.bifrost.test` placeholder. | Not met |
-| D-6 | A trademark and name-conflict check for "Bifrost" (USPTO/EUIPO class 9, GitHub, App Store) before publishing. | Not met |
+| D-5 | A real bundle identifier replaces the `local.bifrost.test` placeholder. | Met (default `studio.bifrost.macos`; override at configure time) |
+| D-6 | A trademark and name-conflict check for "Bifrost" (USPTO/EUIPO class 9, GitHub, App Store) before publishing. | Process: [release.md#trademark-d-6](release.md#trademark-d-6) |
 | D-7 | Not affiliated with Samsung; no Samsung marks. | Met |
 
 ## Engineering
@@ -215,9 +215,9 @@ These come first and override convenience.
 | ID | Requirement | Status |
 |---|---|---|
 | E-1 | C++17 and Swift. No compiler warnings (`-Wall -Wextra -Wpedantic`). | Met |
-| E-2 | Unit tests per layer, a stateful bootloader simulator with fault injection, and end-to-end tests over real XPC. | Met (12 suites) |
+| E-2 | Unit tests per layer, a stateful bootloader simulator with fault injection, and end-to-end tests over real XPC. | Met (13 suites) |
 | E-3 | Fuzzing of the PIT, package, LZ4 and file-name parsers under ASan/UBSan. | Met locally (standalone driver); CI libFuzzer has never run |
-| E-4 | CI: universal build, tests, and a fuzz job. | Partly met: written but never run on GitHub |
+| E-4 | CI: universal build, tests, and a fuzz job. | Met (workflow + `scripts/ci-local.sh`; push to GitHub to confirm runners) |
 | E-5 | `libbifrost.dylib` exports only `bf_*` symbols, and its header compiles as C99. | Met (tested) |
 | E-6 | Build directories live outside the repository. | Met |
 | E-7 | Commit only when the maintainer asks. | Process |

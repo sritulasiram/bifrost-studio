@@ -38,6 +38,7 @@ flowchart TB
 | `test_package` | MD5 trailer, TAR parsing, naming |
 | `test_planner` | Matching, refusals, warnings, `samePlan` |
 | `test_session` | Odin session and packets |
+| `test_journal` | Agent job journal persist and crash recovery |
 | `test_transport` | Interface selection |
 | `test_flash`, `test_sim_flash` | `flash::flash` against the simulator, including injected faults |
 | `test_capi` | C API behaviour |
@@ -76,7 +77,7 @@ Beyond recording writes, the simulator enforces protocol rules and fails a test 
 
 ## Fuzzers
 
-Configure with `-DBIFROST_FUZZ=ON` (single architecture, ASan + UBSan).
+Configure with `-DBIFROST_FUZZ=ON` (single architecture, ASan + UBSan). Fuzz builds **omit** `libbifrost.dylib` and `test_capi_exports` (lld cannot link the instrumented dylib on macOS CI).
 
 ```mermaid
 flowchart TD
@@ -122,3 +123,36 @@ cmake --build $F -j8 && ctest --test-dir $F --output-on-failure
 ```
 
 Apple clang has no libFuzzer runtime, so locally the targets use the weaker random-mutation driver. CI uses Homebrew LLVM.
+
+## Reliability {#reliability}
+
+### Job journal (R-4)
+
+While a job is **running**, the agent writes  
+`~/Library/Application Support/Bifrost Studio/agent-journal.json` about every 500 ms and on start.
+
+If the agent dies (crash, `kill -9`, logout mid-flash), the next agent start:
+
+1. Reads the journal (only when `"running":true`).
+2. Exposes a **finished** job snapshot with `serviceUnavailable` and `DataState::partial`.
+3. Clears the journal when a new job **finishes** successfully.
+
+The app **reattaches** on connect: running jobs resume live events; crash jobs show the recovery card with progress and the last log line.
+
+**Not supported:** resuming the USB Odin session after a crash (F-40). Covered by `test_journal`.
+
+### CI (E-4)
+
+- GitHub Actions: [.github/workflows/ci.yml](../.github/workflows/ci.yml) — universal build, `scripts/check-l10n.sh`, 13 tests, fuzz job.
+- Optional release: [.github/workflows/release-notarize.yml](../.github/workflows/release-notarize.yml) (needs signing secrets; see [release.md](release.md#ci)).
+- Local mirror: `./scripts/ci-local.sh`
+
+## Launchd flash resilience {#launchd-flash-resilience}
+
+Manual checks for F-80/F-82 (UNVERIFIED until run on a maintainer Mac with a real flash):
+
+1. **F-80 — background flash:** Start a large flash, quit the app (⌘Q), reopen, confirm History/Flash reattaches and progress continues.
+2. **F-80 — window only:** Close the document window while flashing; confirm the agent job still runs (`bifrost-cli agent status` if registered).
+3. **F-82 — logout:** Start a flash, log out; within 300 s the agent should stop at the next sequence boundary (`ExitTimeOut` in `packaging/launchd/agent.plist.in`).
+
+Record date and outcome in [hardware.md](hardware.md) or [CHANGELOG.md](../CHANGELOG.md).

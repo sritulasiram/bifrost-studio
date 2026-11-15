@@ -127,6 +127,8 @@ public:
     bool rebooted() const { return rebooted_; }
     bool disconnected() const { return disconnected_; }
     bool released() const { return released_; }
+    /// Wire `realSize` from the last end-of-sequence packet (for SUPER/USERDATA tests).
+    std::optional<std::uint32_t> lastSequenceEndWireSize() const { return lastSequenceEndWireSize_; }
     // True when the device would still be waiting in an open session.
     bool sessionLeftOpen() const;
     // The user restarts the phone into Download Mode: it expects a fresh
@@ -192,6 +194,7 @@ private:
     bool released_{};
     bool handshaken_{};
     std::uint64_t repeatedHandshakes_{};
+    std::optional<std::uint32_t> lastSequenceEndWireSize_{};
 
 public:
     std::uint64_t repeatedHandshakes() const { return repeatedHandshakes_; }

@@ -1,0 +1,9 @@
+libusb is redistributed inside Bifrost Studio as Contents/Frameworks/libusb-1.0.0.dylib
+under the GNU LGPL version 2.1 or later. You may replace that library with a
+compatible build of libusb-1.0.0.dylib.
+
+Full licence text and copyright notices are in the upstream COPYING file shipped
+with libusb. A copy may also appear as Contents/Resources/libusb-COPYING.txt when
+built from a full libusb install tree.
+
+Source: https://github.com/libusb/libusb

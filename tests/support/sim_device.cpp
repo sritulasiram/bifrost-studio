@@ -392,6 +392,7 @@ void Device::handleSequenceEnd(const std::uint8_t* packet)
 {
     const auto destination = readLittleEndian32(packet + 8);
     const auto realSize = readLittleEndian32(packet + 12);
+    lastSequenceEndWireSize_ = realSize;
     const auto binaryType = readLittleEndian32(packet + 16);
     const auto deviceType = readLittleEndian32(packet + 20);
     const auto identifier = readLittleEndian32(packet + 24);
@@ -425,7 +426,10 @@ void Device::handleSequenceEnd(const std::uint8_t* packet)
     if (!filePartition_ && partition.complete) {
         violation("partition " + std::to_string(identifier) + " written twice");
     }
-    const auto keep = std::min<std::size_t>(realSize, sequence_.size());
+    std::size_t keep = std::min<std::size_t>(realSize, sequence_.size());
+    if (announcedTotal_) {
+        keep = std::min(keep, static_cast<std::size_t>(*announcedTotal_ - committedBytes_));
+    }
     if (std::any_of(sequence_.begin() + static_cast<std::ptrdiff_t>(keep), sequence_.end(),
                     [](std::uint8_t b) { return b != 0; })) {
         violation("sequence padding is not zero-filled");

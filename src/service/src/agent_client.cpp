@@ -219,6 +219,8 @@ Expected<std::uint64_t> AgentClient::startFlash(const FlashJobRequest& flashRequ
     putIdentity(message.get(), flashRequest.device);
     xpc_dictionary_set_string(message.get(), "model", flashRequest.typedModel.c_str());
     xpc_dictionary_set_bool(message.get(), "acceptErase", flashRequest.acceptDataErase);
+    xpc_dictionary_set_bool(message.get(), "acceptBootloaderDowngrade",
+                            flashRequest.acceptBootloaderDowngrade);
     xpc_dictionary_set_bool(message.get(), "reboot", flashRequest.reboot);
     if (!flashRequest.reviewedPit.empty()) {
         putData(message.get(), "reviewedPit", flashRequest.reviewedPit.data(),

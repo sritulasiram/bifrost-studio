@@ -377,6 +377,7 @@ bool bf_device_list_get(const bf_device_list* list, size_t index, bf_device_info
                device.identity.busNumber, device.identity.deviceAddress};
     if (device.odinInterface) {
         out->has_odin_interface = true;
+        out->unlisted_product_id = device.unlistedDownloadModeProductId;
         out->interface_number = device.odinInterface->interfaceNumber;
         out->alternate_setting = device.odinInterface->alternateSetting;
         out->endpoint_in = device.odinInterface->endpointIn;
@@ -691,6 +692,47 @@ bool bf_pit_entry_get(const bf_pit* pit, size_t index, bf_pit_entry* out)
 
 void bf_pit_free(bf_pit* pit) { delete pit; }
 
+bf_pit_comparison* bf_pit_compare(const bf_pit* device, const bf_pit* firmware)
+{
+    if (device == nullptr || firmware == nullptr) {
+        return nullptr;
+    }
+    return new bf_pit_comparison{pit::compare(device->table, firmware->table)};
+}
+
+bool bf_pit_comparison_same_layout(const bf_pit_comparison* comparison)
+{
+    return comparison != nullptr && comparison->data.sameLayout();
+}
+
+size_t bf_pit_comparison_layout_count(const bf_pit_comparison* comparison)
+{
+    return comparison == nullptr ? 0 : comparison->data.layoutDifferences.size();
+}
+
+const char* bf_pit_comparison_layout(const bf_pit_comparison* comparison, size_t index)
+{
+    if (comparison == nullptr || index >= comparison->data.layoutDifferences.size()) {
+        return nullptr;
+    }
+    return comparison->data.layoutDifferences[index].c_str();
+}
+
+size_t bf_pit_comparison_size_count(const bf_pit_comparison* comparison)
+{
+    return comparison == nullptr ? 0 : comparison->data.sizeDifferences.size();
+}
+
+const char* bf_pit_comparison_size(const bf_pit_comparison* comparison, size_t index)
+{
+    if (comparison == nullptr || index >= comparison->data.sizeDifferences.size()) {
+        return nullptr;
+    }
+    return comparison->data.sizeDifferences[index].c_str();
+}
+
+void bf_pit_comparison_free(bf_pit_comparison* comparison) { delete comparison; }
+
 // ---- plans ------------------------------------------------------------------
 
 bf_plan* bf_plan_offline(const bf_pit* pit, const bf_packages* packages, bf_error* error)
@@ -840,7 +882,8 @@ bool bf_flash(bf_ctx* ctx, const bf_device_id* device, const bf_packages* packag
         }
         flash::Request request;
         request.packages = packages->packages;
-        request.confirmation = {options->typed_model, options->accept_data_erase};
+        request.confirmation = {options->typed_model, options->accept_data_erase,
+                                options->accept_bootloader_downgrade};
         if (options->reviewed_plan != nullptr) {
             if (!options->reviewed_plan->plan) {
                 setError(error, BF_E_INVALID_ARGUMENT,

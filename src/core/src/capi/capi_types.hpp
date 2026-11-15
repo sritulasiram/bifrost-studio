@@ -34,6 +34,10 @@ struct bf_pit {
     pit::Table table;
 };
 
+struct bf_pit_comparison {
+    pit::Comparison data;
+};
+
 // Built from a FlashPlan (offline, or in-session via the plan callback) or
 // received from the background agent (summary only).
 struct bf_plan {

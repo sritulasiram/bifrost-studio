@@ -38,6 +38,7 @@ struct FlashJobRequest {
     std::vector<PackagePath> packages;
     std::string typedModel;
     bool acceptDataErase{};
+    bool acceptBootloaderDowngrade{};
     bool reboot{true};
     std::vector<std::uint8_t> reviewedPit; // optional
 };

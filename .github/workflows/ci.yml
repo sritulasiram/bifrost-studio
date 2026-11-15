@@ -1,5 +1,4 @@
-# Status: written 2026-11-08 and NOT yet run on GitHub. The libusb build step
-# and the Homebrew-LLVM libFuzzer job could not be exercised locally.
+# Universal build, tests, fuzz (libFuzzer via Homebrew LLVM on macOS).
 name: CI
 
 on:
@@ -22,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install CMake
+        run: brew install cmake
+
       - name: Cache libusb
         id: libusb-cache
         uses: actions/cache@v4
@@ -29,7 +31,7 @@ jobs:
           path: ~/.local
           key: libusb-${{ env.LIBUSB_VERSION }}-universal-${{ env.LIBUSB_SHA256 }}
 
-      - name: Build universal static libusb
+      - name: Build universal libusb (static + dynamic)
         if: steps.libusb-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
@@ -38,17 +40,21 @@ jobs:
           echo "${LIBUSB_SHA256}  libusb.tar.bz2" | shasum -a 256 -c -
           tar xjf libusb.tar.bz2
           cd "libusb-${LIBUSB_VERSION}"
-          ./configure --disable-shared --enable-static --prefix="$HOME/.local" \
+          ./configure --enable-static --enable-shared --prefix="$HOME/.local" \
             CFLAGS="-arch arm64 -arch x86_64 -mmacosx-version-min=13.0 -O2"
           make -j"$(sysctl -n hw.ncpu)"
           make install
           lipo -archs "$HOME/.local/lib/libusb-1.0.a"
+          lipo -archs "$HOME/.local/lib/libusb-1.0.0.dylib"
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLIBUSB_ROOT="$HOME/.local"
 
       - name: Build
         run: cmake --build build -j"$(sysctl -n hw.ncpu)"
+
+      - name: Check localization catalog
+        run: chmod +x scripts/check-l10n.sh && ./scripts/check-l10n.sh
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
@@ -58,6 +64,8 @@ jobs:
           lipo -archs "build/Bifrost Studio.app/Contents/MacOS/BifrostStudio" | grep -q x86_64
           lipo -archs "build/Bifrost Studio.app/Contents/MacOS/BifrostStudio" | grep -q arm64
           lipo -archs build/src/core/libbifrost.dylib | grep -q x86_64
+          test -f "build/Bifrost Studio.app/Contents/Frameworks/libusb-1.0.0.dylib"
+          lipo -archs "build/Bifrost Studio.app/Contents/Frameworks/libusb-1.0.0.dylib" | grep -q arm64
 
   fuzz:
     name: Fuzz (libFuzzer, ASan+UBSan)
@@ -65,10 +73,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM and lld (LLVM provides the libFuzzer runtime Apple clang lacks)
-        # lld links the sanitizer-instrumented objects: Apple's linker rejected them
-        # ("invalid r_symbolnum=1") when they were built with Homebrew's clang.
-        run: brew install llvm lld
+      - name: Install CMake, LLVM, and lld
+        run: brew install cmake llvm lld
+        # lld links sanitizer-instrumented objects (Apple ld rejects some).
 
       - name: Configure
         run: |
@@ -78,6 +85,7 @@ jobs:
           cmake -S . -B build-fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_C_COMPILER="$LLVM/bin/clang" -DCMAKE_CXX_COMPILER="$LLVM/bin/clang++" \
             -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=$LLD" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=$LLD" \
             -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
             -DBIFROST_FUZZ=ON -DBIFROST_ENABLE_USB=OFF -DBIFROST_BUILD_APP=OFF
           grep -q 'BIFROST_HAVE_LIBFUZZER:INTERNAL=1' build-fuzz/CMakeCache.txt

@@ -149,6 +149,34 @@ int main()
         CHECK(report && report->bytesTransferred == large.boot.size() + large.system.size());
     }
 
+    // SUPER: wire size on the last sequence is rounded up to 512 bytes.
+    {
+        constexpr std::size_t kRaw = 700001;
+        constexpr std::uint32_t kRounded =
+            (static_cast<std::uint32_t>(kRaw) + 511u) & ~511u;
+        const std::vector<test::PitSpec> kSuper{{10, "SUPER", "super.img"}};
+        sim::Config c;
+        c.pit = test::makePit(kSuper);
+        c.protocolVersion = 2;
+        sim::Device device(std::move(c));
+        Firmware superOnly;
+        superOnly.boot = pattern(kRaw, 9);
+        const auto tar = TarBuilder().file("super.img", superOnly.boot).finish();
+        const auto name = "AP_N950FXXU8DUH1_SUPER.tar.md5";
+        const auto path = dir.write(name, test::withMd5Trailer(tar, name));
+        auto loaded = flash::loadPackages({{Slot::ap, path}});
+        CHECK(loaded);
+        if (loaded) {
+            superOnly.packages = std::move(*loaded);
+            auto report = flash::flash(device, {superOnly.packages, {"SM-N950F", false}, std::nullopt}, {});
+            CHECK(report);
+            checkClean(device);
+            CHECK(device.lastSequenceEndWireSize() == kRounded);
+            const auto* written = device.written(10);
+            CHECK(written != nullptr && written->size() == kRaw);
+        }
+    }
+
     // Protocol v0/1: 128 KiB parts, no part-size request.
     for (std::uint16_t version : {0, 1}) {
         sim::Device device(config(version));
@@ -323,8 +351,10 @@ int main()
     {
         sim::Faults f;
         f.lateZlpAfterSequence = 0;
-        // Known fail-safe behaviour (docs/status.md, "Known issues").
-        cases.push_back({"late ZLP", f, ErrorCode::protocolViolation, DataState::partial});
+        sim::Device device(config(2, f));
+        auto report = flash::flash(device, request(small), {});
+        CHECK(report);
+        checkWritten(device, small);
     }
     {
         sim::Faults f;

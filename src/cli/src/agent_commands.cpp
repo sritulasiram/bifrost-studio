@@ -405,6 +405,7 @@ int agentCommand(int argc, char** argv)
         request.typedModel = value(*options, "--model");
         request.packages = options->packages;
         request.acceptDataErase = has(*options, "--accept-data-erase");
+        request.acceptBootloaderDowngrade = has(*options, "--accept-bootloader-downgrade");
         request.reboot = !has(*options, "--no-reboot");
         if (has(*options, "--resume")) {
             std::cerr << "flash cannot --resume: re-enter Download Mode, then flash\n";

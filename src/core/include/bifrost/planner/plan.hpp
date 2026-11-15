@@ -68,6 +68,7 @@ bool samePlan(const FlashPlan& a, const FlashPlan& b) noexcept;
 struct Confirmation {
     std::string typedModel;      // what the user typed, e.g. "SM-N950F"
     bool acknowledgeDataErase{}; // required when the plan erases user data
+    bool acknowledgeBootloaderDowngrade{}; // when BL is older than other packages
 };
 
 // Validates the user's confirmation against the plan.

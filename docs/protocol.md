@@ -35,7 +35,7 @@ All control requests are **1024-byte packets**, `[command u32le][request u32le][
 
 | Step | Sent | Reply |
 |---|---|---|
-| Handshake | `ODIN` (4 bytes) | `LOKE`. Answered **once per Download Mode entry**. A silent timeout is retried in place, up to 4 attempts 300 ms apart (UNVERIFIED: added for the SM-N986U1, not yet shown to help). |
+| Handshake | `ODIN` (4 bytes) | `LOKE` (read in one or more short bulk reads until 4 bytes). Answered **once per Download Mode entry**. A silent timeout is retried in place, up to 4 attempts 300 ms apart (UNVERIFIED: added for the SM-N986U1, not yet shown to help). |
 | Begin | `0x64/0 {0x7FFFFFFF}` | `0x64`, value = ACK. Protocol version = `(ACK >> 16) & 0x7FFF`; bit 15 = compressed transfer supported |
 | Part size (version > 1) | `0x64/5 {1048576}` | `0x64`, non-negative |
 | Total size | `0x64/2 {low32, high32}` | `0x64`, non-negative |
@@ -96,7 +96,7 @@ Implemented in `src/core/src/planner/plan.cpp`.
 | Why a Snapdragon phone (SM-N986U1, `SM8250`) accepts the handshake bytes but never answers `LOKE` | Unknown. See [hardware.md](hardware.md). The handshake is retried and the USB setup above is applied; neither is confirmed to help. |
 | End-of-sequence layout for modem-type partitions (binary type 1): references disagree on where the end-of-file flag goes | Refused (S-5). The SM-N920I has no such partitions. |
 | Meaning of `0x64/1` | Never sent (S-4) |
-| Rounding the real size to 512 bytes for SYSTEM/USERDATA/SUPER, as one reference does | Not done; relevant to newer phones (`super`) |
+| Rounding the real size to 512 bytes in the end-of-sequence packet for SUPER and USERDATA | Done on the last sequence (Exynos SYSTEM unchanged; untested on Snapdragon hardware) |
 | Version decode and part sizing on older phones (protocol ≤ 1) | 128 KiB × 240; untested |
 | Whether other phones need the same ZLP pattern and single-session rule | Assumed; untested |
 | Compressed LZ4 transfer (`0x66/5–7`) | Not used |

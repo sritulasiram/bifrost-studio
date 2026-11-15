@@ -18,7 +18,7 @@ The key combination depends on the model; this is general Samsung guidance, not 
 - Newer phones with neither: hold **Volume Up + Volume Down** and plug in the USB cable.
 - Press **Volume Up** at the warning screen to continue.
 
-If the phone is booted into Android with USB debugging on, Tools › Android › **Reboot to Download Mode** does this for you (unreleased; not yet verified on hardware).
+If the phone is booted into Android with USB debugging on, **Android › adb › Reboot to Download Mode** can do this (UNVERIFIED on hardware).
 
 The phone should show a Download Mode screen, and Bifrost Studio's sidebar should list it. If it only says "not in Download Mode", the phone may use a product ID not yet listed (fail-safe; see [status.md](status.md#known-issues)).
 

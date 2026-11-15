@@ -159,6 +159,7 @@ typedef struct bf_device_id {
 typedef struct bf_device_info {
     bf_device_id id;
     bool has_odin_interface;
+    bool unlisted_product_id; /* Odin interface on a PID not in the whitelist */
     uint8_t interface_number;
     uint8_t alternate_setting;
     uint8_t endpoint_in;
@@ -275,6 +276,20 @@ BF_API size_t bf_pit_entry_count(const bf_pit *pit);
 BF_API bool bf_pit_entry_get(const bf_pit *pit, size_t index, bf_pit_entry *out);
 BF_API void bf_pit_free(bf_pit *pit);
 
+typedef struct bf_pit_comparison bf_pit_comparison;
+/* Compares a device-side PIT with the PIT embedded in firmware (or any two
+ * parsed tables). Layout differences block flashing; size-only differences may
+ * be a legitimate PIT revision. */
+BF_API bf_pit_comparison *bf_pit_compare(const bf_pit *device, const bf_pit *firmware);
+BF_API bool bf_pit_comparison_same_layout(const bf_pit_comparison *comparison);
+BF_API size_t bf_pit_comparison_layout_count(const bf_pit_comparison *comparison);
+BF_API const char *bf_pit_comparison_layout(const bf_pit_comparison *comparison,
+                                            size_t index);
+BF_API size_t bf_pit_comparison_size_count(const bf_pit_comparison *comparison);
+BF_API const char *bf_pit_comparison_size(const bf_pit_comparison *comparison,
+                                          size_t index);
+BF_API void bf_pit_comparison_free(bf_pit_comparison *comparison);
+
 /* ---- plans ---------------------------------------------------------------- */
 
 typedef struct bf_planned_file {
@@ -329,6 +344,7 @@ BF_API bool bf_probe(bf_ctx *ctx, const bf_device_id *device, bool resume,
 typedef struct bf_flash_options {
     const char *typed_model;  /* what the user typed, e.g. "SM-N950F" (required) */
     bool accept_data_erase;   /* required when the plan erases user data */
+    bool accept_bootloader_downgrade; /* when BL revision is below AP/CSC/CP */
     bool reboot;              /* request a reboot after a successful flash */
     /* No `resume`: a flash always opens the first session of a Download Mode
      * entry (fresh handshake). Re-enter Download Mode after a probe or PIT read. */
@@ -410,6 +426,7 @@ typedef struct bf_agent_flash_request {
     size_t package_count;
     const char *typed_model;
     bool accept_data_erase;
+    bool accept_bootloader_downgrade;
     bool reboot;
     /* No `resume`: see bf_flash_options. */
     const uint8_t *reviewed_pit;  /* optional: the PIT the user reviewed the plan against */

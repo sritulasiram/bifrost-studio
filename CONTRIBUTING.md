@@ -36,10 +36,10 @@ Build and test steps are in [docs/build-and-install.md](docs/build-and-install.m
 All pages live flat in [docs/](docs); the [README](README.md#documentation) is the only index.
 
 - **UNVERIFIED.** Hardware results live only in [docs/hardware.md](docs/hardware.md). Statements elsewhere come from the code or tests.
-- **Own one thing per page.** How to use the app and recover from failures: [using](docs/using.md). Known issues in [status](docs/status.md), requirement status in [requirements](docs/requirements.md), interfaces in [c-api](docs/c-api.md), [cli](docs/cli.md) and [service-wire](docs/service-wire.md), mechanisms in [architecture](docs/architecture.md), [protocol](docs/protocol.md), [services](docs/services.md) and [app](docs/app.md).
+- **Own one thing per page.** Map: [docs/README.md](docs/README.md). Use: [using](docs/using.md). Status, roadmap, coverage gaps: [status](docs/status.md). Requirements: [requirements](docs/requirements.md). Interfaces: [c-api](docs/c-api.md), [cli](docs/cli.md), [service-wire](docs/service-wire.md). Mechanisms: [architecture](docs/architecture.md), [protocol](docs/protocol.md), [services](docs/services.md), [app](docs/app.md) (incl. HIG). Tests, journal, CI: [testing](docs/testing.md). Release + trademark: [release](docs/release.md).
 - **Diagrams are Mermaid.** GitHub renders them.
 - **User-visible change?** Add a line under Unreleased in [CHANGELOG.md](CHANGELOG.md), and mark anything not yet run on a phone UNVERIFIED.
-- **New page?** Add it to the table in the README.
+- **New page?** Add it to [docs/README.md](docs/README.md) and the table in the README.
 
 ## Hardware reports
 

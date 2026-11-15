@@ -29,15 +29,29 @@ option(BIFROST_ENABLE_USB "Build the libusb transport" ON)
 if(BIFROST_ENABLE_USB)
     find_path(LIBUSB_INCLUDE_DIR NAMES libusb.h PATH_SUFFIXES libusb-1.0
         HINTS "${LIBUSB_ROOT}/include" "$ENV{HOME}/.local/include")
-    find_library(LIBUSB_LIBRARY NAMES usb-1.0
-        HINTS "${LIBUSB_ROOT}/lib" "$ENV{HOME}/.local/lib")
+    set(_bifrost_libusb_static "${LIBUSB_ROOT}/lib/libusb-1.0.a")
+    if(EXISTS "${_bifrost_libusb_static}")
+        set(LIBUSB_LIBRARY "${_bifrost_libusb_static}")
+    else()
+        find_library(LIBUSB_LIBRARY NAMES usb-1.0
+            HINTS "${LIBUSB_ROOT}/lib" "$ENV{HOME}/.local/lib")
+    endif()
     if(NOT LIBUSB_INCLUDE_DIR OR NOT LIBUSB_LIBRARY)
         message(FATAL_ERROR "libusb 1.0.28+ was not found; set LIBUSB_ROOT.")
+    endif()
+    set(BIFROST_LIBUSB_LIB "${LIBUSB_LIBRARY}")
+    set(_bifrost_libusb_dylib "${LIBUSB_ROOT}/lib/libusb-1.0.0.dylib")
+    if(BIFROST_LIBUSB_SHARED AND APPLE AND EXISTS "${_bifrost_libusb_dylib}")
+        set(BIFROST_LIBUSB_LIB "${_bifrost_libusb_dylib}")
+        set(BIFROST_LIBUSB_BUNDLE "${_bifrost_libusb_dylib}" CACHE INTERNAL "")
+        message(STATUS "libusb: dynamic ${_bifrost_libusb_dylib} (bundled in the app)")
+    elseif(BIFROST_LIBUSB_SHARED AND APPLE)
+        message(STATUS "libusb: static ${LIBUSB_LIBRARY} (install libusb-1.0.0.dylib under LIBUSB_ROOT)")
     endif()
 
     add_library(BifrostUsb STATIC src/transport/libusb_transport.cpp)
     target_include_directories(BifrostUsb SYSTEM PRIVATE "${LIBUSB_INCLUDE_DIR}")
-    target_link_libraries(BifrostUsb PUBLIC BifrostCore PRIVATE "${LIBUSB_LIBRARY}")
+    target_link_libraries(BifrostUsb PUBLIC BifrostCore PRIVATE "${BIFROST_LIBUSB_LIB}")
     target_compile_options(BifrostUsb PRIVATE -Wall -Wextra -Wpedantic)
     if(APPLE)
         find_library(IOKIT_FRAMEWORK IOKit REQUIRED)
@@ -66,30 +80,32 @@ if(APPLE)
 endif()
 
 # libbifrost.dylib: the stable C ABI for the app and XPC service. Only bf_*
-# symbols are exported.
-if(BIFROST_ENABLE_USB)
-    add_library(Bifrost SHARED src/capi/bifrost_c.cpp src/capi/default_transport_libusb.cpp)
-    target_link_libraries(Bifrost PRIVATE BifrostUsb)
-else()
-    add_library(Bifrost SHARED src/capi/bifrost_c.cpp src/capi/default_transport_none.cpp)
-    target_link_libraries(Bifrost PRIVATE BifrostCore)
-endif()
-target_include_directories(Bifrost PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_compile_options(Bifrost PRIVATE -Wall -Wextra -Wpedantic)
-set_target_properties(Bifrost PROPERTIES
-    OUTPUT_NAME bifrost
-    VERSION "${PROJECT_VERSION}"
-    SOVERSION 1
-    CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON)
-if(APPLE)
-    # The agent client part of the C API (service/ is added after core/).
-    target_sources(Bifrost PRIVATE src/capi/agent_c.cpp)
-    target_link_libraries(Bifrost PRIVATE BifrostService)
-    set_target_properties(Bifrost PROPERTIES INSTALL_NAME_DIR "@rpath")
-    target_link_options(Bifrost PRIVATE
-        "LINKER:-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/src/capi/exports.txt")
-    set_property(TARGET Bifrost APPEND PROPERTY LINK_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/capi/exports.txt")
+# symbols are exported. Skip the dylib when fuzzing (ASan + lld cannot link it on macOS CI).
+if(NOT BIFROST_FUZZ)
+    if(BIFROST_ENABLE_USB)
+        add_library(Bifrost SHARED src/capi/bifrost_c.cpp src/capi/default_transport_libusb.cpp)
+        target_link_libraries(Bifrost PRIVATE BifrostUsb)
+    else()
+        add_library(Bifrost SHARED src/capi/bifrost_c.cpp src/capi/default_transport_none.cpp)
+        target_link_libraries(Bifrost PRIVATE BifrostCore)
+    endif()
+    target_include_directories(Bifrost PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_options(Bifrost PRIVATE -Wall -Wextra -Wpedantic)
+    set_target_properties(Bifrost PROPERTIES
+        OUTPUT_NAME bifrost
+        VERSION "${PROJECT_VERSION}"
+        SOVERSION 1
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+    if(APPLE)
+        # The agent client part of the C API (service/ is added after core/).
+        target_sources(Bifrost PRIVATE src/capi/agent_c.cpp)
+        target_link_libraries(Bifrost PRIVATE BifrostService)
+        set_target_properties(Bifrost PROPERTIES INSTALL_NAME_DIR "@rpath")
+        target_link_options(Bifrost PRIVATE
+            "LINKER:-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/src/capi/exports.txt")
+        set_property(TARGET Bifrost APPEND PROPERTY LINK_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/capi/exports.txt")
+    endif()
 endif()

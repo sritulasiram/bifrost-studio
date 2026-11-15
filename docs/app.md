@@ -22,28 +22,87 @@ stateDiagram-v2
     Flashing --> [*]
 ```
 
-## Source files
+## Source layout
+
+Swift sources live under `src/app/Sources/` in four groups (single module; no sub-targets):
+
+| Folder | Role |
+|---|---|
+| `App/` | `@main`, window chrome, settings, shared UI chrome, `L10n` |
+| `Model/` | `AppModel` and extensions (history, inspect/tools) |
+| `Bridge/` | C API types, agent client, launchd/SMAppService |
+| `Workspace/` | Flash, Inspect, History, Device/Android workspaces and tool forms |
 
 | File | Contents |
 |---|---|
-| `BifrostStudioApp.swift` | `@main`, Settings scene, ⌘1–3 shortcuts, terminal flags `--service-status`, `--register-services`, `--unregister-services` |
-| `Bridge.swift` | Swift value types copied from the C API, `LocalCore` (in-process), `PitTable` (including the firmware's embedded PIT) |
-| `AgentConnection.swift` | `bf_agent_*` wrapper; events are copied in the callback and delivered on the main thread |
-| `AppModel.swift` | State, job tracking, review (firmware PIT or file), the `handshakeDone` heuristic, history and retention, `Prefs` |
-| `FlashFlowView.swift` | ① Setup ② Review & Confirm ③ Flash, and the "restart into Download Mode" notice |
-| `ToolsView.swift` | Probe, PIT Backup, Inspect, Android (bundled adb), TWRP |
-| `HistoryView.swift` | Filter, search, summary, export, retry, delete |
-| `SettingsView.swift` | General, Services, Flashing, Data, About, Diagnostics |
-| `Views.swift` | Sidebar (Workspace and Devices), service banner, `HandshakeToggle`, `JobLine`, `RecoveryCard`, `PlanView` |
-| `BackgroundServices.swift` | `SMAppService` helpers and service controls |
+| `App/BifrostStudioApp.swift` | `@main`, Settings scene, terminal flags `--service-status`, `--register-services`, `--unregister-services` |
+| `App/AppDelegate.swift` | Window presentation at launch |
+| `App/Views.swift` | Sidebar (Workspace and Devices), service banner, `HandshakeToggle`, `JobLine`, `RecoveryCard`, `PlanView` |
+| `App/SettingsView.swift` | General, Services, Flashing, Data, About, Diagnostics |
+| `App/L10n.swift` | Keys for `Localizable.xcstrings` |
+| `Model/AppModel.swift` | State, job tracking, review, `handshakeDone`, history retention, `Prefs` |
+| `Model/AppModel+History.swift` | History load/save, export, retry |
+| `Model/AppModel+Tools.swift` | Inspect packages, `toolsPitDiff`, session/plan export |
+| `Bridge/Bridge.swift` | Value types from the C API, `LocalCore`, `PitTable` |
+| `Bridge/AgentConnection.swift` | `bf_agent_*`; events on the main thread |
+| `Bridge/BackgroundServices.swift` | `SMAppService` and service controls |
+| `Workspace/WelcomeSheet.swift` | First-run workspace overview |
+| `Workspace/FlashFlowView.swift` | Setup → Review & Confirm → Flash |
+| `Workspace/ToolsInspectView.swift` | Inspect sidebar |
+| `Workspace/HistoryView.swift` | Filter, search, export, retry |
+| `Workspace/DeviceWorkspaceView.swift` | Device sidebar shell + session banner |
+| `Workspace/DeviceToolViews.swift` | Probe and PIT backup forms |
+| `Workspace/AndroidWorkspaceView.swift` | Android sidebar shell |
+| `Workspace/AndroidToolViews.swift` | adb and TWRP forms |
+| `Workspace/ToolsPlatform.swift` | Bundled adb/fastboot, TWRP tar validation |
+| `Workspace/ToolsTypes.swift` | Shared enums for tool pages |
+| `Workspace/DownloadModeGuide.swift`, `Workspace/PitDiffView.swift` | Flash copy and PIT diff UI |
 
 - **`handshakeDone`:** set after any job that opened a session without rebooting the phone. Cleared when no Download Mode phone has been seen for more than 3 s, which means the phone was restarted. The user can override it ("I Restarted It into Download Mode").
 - **History:** one JSON file per job in `~/Library/Application Support/Bifrost Studio/History/`.
 - **`needsRestart`:** set when an attempt times out before any data was sent. Every attempt resets the phone's USB, so further attempts in the same Download Mode entry make it worse. Flash stays disabled until the phone has been restarted into Download Mode or the user clears the "already used" setting.
 
-## Tools
+## Workspace sidebar
 
-- **Probe, PIT Backup.** Each uses up the Download Mode session, so restart the phone before flashing.
-- **Inspect.** Lists a package's entries and checks its MD5, with no phone.
-- **Android.** Runs the `adb` from Android platform-tools 37.0.1 that ships inside the app (`Contents/Resources/platform-tools`): list phones, reboot to Download Mode or Recovery, restart the adb server. Rebooting to Download Mode needs USB debugging on and this Mac authorised on the phone. UNVERIFIED on hardware.
-- **TWRP.** Loads a TWRP `.img.tar` as the only file in the AP slot and turns off the automatic restart, so the normal Flash flow can be used and you can boot straight into recovery. It does not unlock the bootloader. Unlocking erases all data and trips Knox permanently. UNVERIFIED on hardware.
+| Sidebar | Purpose |
+|---------|---------|
+| Flash | Setup → Review → Flash |
+| Inspect | Offline packages, PIT, plan, `toolsPitDiff` |
+| History | All agent jobs (flash, probe, PIT read) |
+| Device | Probe and PIT backup (Download Mode; session banner) |
+| Android | adb / fastboot and TWRP prep (UNVERIFIED on hardware) |
+
+Menu shortcuts: **⌘1–5** for the five sections. Flash action still has no shortcut (F-33). Review's `pitDiff` stays on Flash › Review; Inspect and Device use `toolsPitDiff`.
+
+- **Probe.** Opens a session without sending firmware or a PIT. **Copy Session Info** pastes ACK, protocol, and byte counts for support. Uses the Download Mode session; restart before flashing.
+- **PIT Backup.** Saves the phone's partition table. On success, **Inspect** opens with that PIT when firmware is loaded in Flash or Inspect, and **toolsPitDiff** runs automatically. **Open in Inspect** and file compare work against Flash or Inspect-only packages.
+- **Inspect.** Open `.tar.md5` / `.tar` without Flash Setup; MD5 verify and list entries; load PIT from file, Review, firmware CSC, or post-backup ingest; offline plan, copy/export plan text, pit summary.
+- **Android.** Bundled platform-tools 37.0.1 (`adb`, `fastboot`): device picker when multiple phones are attached, reboot to Download Mode / Recovery / bootloader, restart adb. USB debugging and Mac authorisation required. UNVERIFIED on hardware.
+- **TWRP.** Validates Odin-style `.img.tar`, shows a model hint from the filename, then **Prepare Flash** loads AP only and disables auto-reboot. Does not unlock the bootloader. UNVERIFIED on hardware.
+
+## macOS design (HIG)
+
+How the app should feel on the Mac. A copy ships in the app bundle as **Help → Design** (`Resources/Design.md`).
+
+### Principles
+
+1. **Safety before speed** — Ambiguous flashes are refused offline. Destructive flashes need explicit toggles and a confirmation alert. Flash has **no keyboard shortcut**.
+2. **Honest state** — Download Mode vs not, session-used, service disconnected, and partial-write errors are plain language (`RecoveryCard`).
+3. **Native shell** — `NavigationSplitView`, grouped settings (⌘,), system symbols, standard sheets/alerts.
+4. **One job at a time** — Flash runs in the background agent; the window can close without stopping work.
+
+### Layout
+
+| Area | Pattern |
+|------|---------|
+| Sidebar | Workspace sections (`List(selection:)`) + read-only device list |
+| Flash | Three-step wizard; bottom action bar for the primary action |
+| History | Split list + detail |
+| Device / Android | Single segmented sub-picker under the title when those sections are selected |
+| Settings | Tabbed preferences scene |
+
+### Accessibility and localization
+
+- Sidebar and device rows expose selection to VoiceOver; progress views report percent; recovery cards are combined accessibility elements.
+- `Resources/Localizable.xcstrings` for navigation and menus (UX-6); `en.lproj/Localizable.strings` stays in sync via `scripts/check-l10n.sh`.
+- **Help → Bifrost Studio Help** opens `UserGuide.md` ([using.md](using.md)).
