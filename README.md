@@ -4,7 +4,7 @@
 
 <h1 align="center">Bifrost Studio</h1>
 
-<p align="center"><strong>Samsung firmware flasher for Mac: a native Odin alternative for macOS.</strong></p>
+<p align="center"><strong>Samsung Galaxy firmware flasher for Mac — native Odin / Heimdall alternative for macOS (Download Mode, .tar.md5).</strong></p>
 
 <p align="center">
   <a href="https://github.com/sritulasiram/bifrost-studio/releases/latest">Latest release</a>
@@ -12,13 +12,13 @@
   <a href="CHANGELOG.md">1.1.0</a>
 </p>
 
-Bifrost Studio flashes Samsung Galaxy firmware over USB in Download Mode, the way Odin does, but natively on macOS. It takes the same `.tar.md5` packages (BL, AP, CP, CSC, HOME_CSC), so you need no Windows, Wine, Java or Heimdall build.
+Bifrost Studio flashes Samsung Galaxy firmware over USB in **Download Mode**, the way **Odin** does on Windows, but as a native macOS app (no Wine, no Java). It uses the same **`.tar.md5`** packages (BL, AP, CP, CSC, HOME_CSC) as Odin and common Heimdall workflows, with offline plan review before any bytes hit the phone.
 
 > **Warning.** Flashing can leave a phone unbootable or erase its data. Use it only on a phone you are prepared to recover, with firmware for that exact model. Not affiliated with Samsung.
 
 > **Beta.** Version **1.1.0** is tested on **SM-N915G**, **SM-N920I**, and **SM-N950F**; **SM-N986U1** is still blocked. Release builds are **ad-hoc signed** (not Apple-notarized yet). If something goes wrong, [open an issue](https://github.com/sritulasiram/bifrost-studio/issues) with the phone model, firmware build, and the log from **History › Export › Copy for Bug Report**.
 
-![Bifrost Studio: sidebar workspaces and Flash setup (step 1 of 3)](docs/images/flash-setup.png)
+![Bifrost Studio on macOS — Samsung firmware flash UI: Flash, Inspect, History, Device, and Android sidebars (setup step 1 of 3)](docs/images/flash-setup.png)
 
 ## Features
 

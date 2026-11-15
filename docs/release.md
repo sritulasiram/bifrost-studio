@@ -102,6 +102,10 @@ The bundle ships `Contents/Frameworks/libusb-1.0.0.dylib`. Users may replace it 
 
 Local notarization still uses a keychain profile (`BIFROST_NOTARY_PROFILE`) via `packaging/notarize.sh`. CI uses the API key env vars documented in that script.
 
+## GitHub discovery
+
+README, release notes, and the repo **About** box should share the same keywords (Samsung firmware, Odin alternative, Download Mode, `.tar.md5`). Checklist and `gh` commands: [packaging/github-discovery.md](../packaging/github-discovery.md).
+
 ## Trademark (D-6) {#trademark-d-6}
 
 Complete before the first **public** DMG or GitHub release. Record the date and outcome in release notes and [CHANGELOG.md](../CHANGELOG.md).

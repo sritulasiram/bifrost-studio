@@ -29,6 +29,7 @@ The [README](../README.md#documentation) table is the full index. Pages are grou
 | Build, install, CMake options | [build-and-install.md](build-and-install.md) |
 | Tests, fuzz, journal, CI | [testing.md](testing.md) |
 | Sign, notarize, trademark (D-6) | [release.md](release.md) |
+| GitHub About, topics, release SEO | [packaging/github-discovery.md](../packaging/github-discovery.md) |
 | Roadmap (phases) | [roadmap.md](roadmap.md) |
 | Status, coverage gaps | [status.md](status.md) |
 | Requirement IDs (F-, S-, R-) | [requirements.md](requirements.md) |
